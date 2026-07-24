@@ -1,0 +1,14 @@
+node_modules/
+dist/
+release/
+.DS_Store
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+output/
+public/qa/
+public/assets/profile-mountain.png
+public/logos/doubao.jpg
+.openai/
