@@ -52,6 +52,13 @@ npm run build
 npm run test:sites
 ```
 
+If you are deploying through OpenAI Sites and have a local
+`.openai/hosting.json`, prepare the Sites bundle with:
+
+```bash
+npm run build:sites
+```
+
 Build a macOS Apple Silicon installer:
 
 ```bash
