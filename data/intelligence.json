@@ -2,9 +2,10 @@
   "generatedAt": null,
   "opportunities": [],
   "roleBriefs": {},
+  "updates": [],
   "automation": {
     "name": "秋招情报 Loop",
-    "schedule": "每天 12:00",
+    "schedule": "每天 22:30",
     "status": "not_configured"
   }
 }

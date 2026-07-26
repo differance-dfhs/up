@@ -1,5 +1,24 @@
 # Third-party notices
 
+## career-ops
+
+`up` is an independent visual companion built on and integrated with the
+open-source [career-ops](https://github.com/santifer/career-ops) project.
+
+Thank you to [Santiago Fernández de Valderrama
+(@santifer)](https://github.com/santifer) for creating and maintaining
+career-ops. `up` connects to a separately installed local copy and provides a
+desktop visualization layer, company-centered workspace, timelines,
+source-linked recruiting intelligence, and additional local-first features.
+
+career-ops is licensed under the MIT License. A copy of its license is included
+at [`licenses/career-ops-MIT.txt`](licenses/career-ops-MIT.txt).
+
+The `career-ops` name and brand are governed by the upstream project's
+[trademark policy](https://github.com/santifer/career-ops/blob/main/TRADEMARK.md).
+`up` is not an official career-ops release and does not imply endorsement,
+affiliation, or sponsorship.
+
 ## Source Han Serif
 
 `public/fonts/SourceHanSerifSC-VF.otf` is part of Source Han Serif.
