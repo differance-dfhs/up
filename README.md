@@ -11,7 +11,7 @@ The public release starts completely empty. It contains no companies, positions,
 >
 > **特别感谢 [@santifer](https://github.com/santifer) 创建并开源
 > career-ops。up 使用了 career-ops 提供的开源求职工作流、运行模式和本地数据契约，
-> 在这些能力之上制作了桌面可视化界面，并继续加入适合个人秋招使用的新功能。**
+> 在这些能力之上制作了桌面可视化界面，并继续加入适合个人求职使用的新功能。**
 
 career-ops provides the underlying job-search capabilities that `up` invokes,
 including role evaluation, opportunity scanning, tailored CV and cover-letter
