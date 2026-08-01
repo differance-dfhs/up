@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowClockwise,
   ArrowRight,
@@ -42,9 +44,8 @@ const ACTION_GROUPS = [
   {
     id: "apply",
     label: "材料与投递",
-    description: "所有内容都从已核验事实出发，提交权始终留给你。",
+    description: "每个动作都由 Career Ops 执行，所有内容从已核验事实出发，提交权始终留给你。",
     actions: [
-      { id: "pdf", label: "定制简历", caption: "生成岗位定向 PDF", kicker: "PDF 输出", tone: "coral", icon: FilePdf, role: true },
       { id: "cover", label: "求职信草稿", caption: "基于岗位与公司生成初稿", kicker: "叙事", tone: "amber", icon: ClipboardText, role: true },
       { id: "email", label: "申请邮件草稿", caption: "主题、正文与附件清单", kicker: "邮件", tone: "sky", icon: EnvelopeSimple, role: true },
       { id: "apply", label: "准备申请", caption: "预填问题但绝不自动提交", kicker: "关键动作", tone: "blue", icon: PaperPlaneTilt, role: true, guarded: true, featured: true },
@@ -79,8 +80,19 @@ const ACTION_GROUPS = [
   },
 ];
 
+const RESUME_ANALYZE_ACTION = {
+  id: "resume-analyze",
+  label: "分析这份 PDF",
+  caption: "Career Ops 将直接阅读文字并逐页检查版式",
+  kicker: "只读分析",
+  tone: "blue",
+  icon: ChartLineUp,
+  resume: true,
+};
+
 const PREPARE_SECTIONS = [
-  { id: "apply", label: "申请材料", icon: FilePdf },
+  { id: "resume", label: "简历分析", icon: FilePdf },
+  { id: "apply", label: "投递材料", icon: PaperPlaneTilt },
   { id: "interview", label: "面试训练", icon: UserFocus },
   { id: "grow", label: "能力成长", icon: ChartLineUp },
 ];
@@ -90,7 +102,6 @@ const SURFACE_ACTIONS = {
   library: new Set(["deep"]),
   role: new Set(["evaluate", "followup"]),
   prepare: new Set([
-    "pdf",
     "cover",
     "email",
     "apply",
@@ -111,22 +122,22 @@ const SURFACE_ACTIONS = {
 
 const SURFACE_COPY = {
   discovery: {
-    eyebrow: "CAREER OPS · DISCOVERY",
+    eyebrow: "机会管理",
     title: "把机会发现变成可判断的候选池",
     description: "扫描、处理和比较新岗位，确认值得投入后再加入岗位库。",
   },
   library: {
-    eyebrow: "CAREER OPS · RESEARCH",
+    eyebrow: "岗位研究",
     title: "继续深化这条岗位情报",
     description: "在已有来源之上补充公司、业务和候选人视角。",
   },
   role: {
-    eyebrow: "CAREER OPS · POSITION",
+    eyebrow: "岗位推进",
     title: "推进当前岗位",
     description: "只呈现与当前岗位状态直接相关的判断和跟进动作。",
   },
   prepare: {
-    eyebrow: "CODEX × CAREER OPS",
+    eyebrow: "准备中心",
     title: "准备申请、面试与长期能力",
     description: "材料、训练和成长各自成组，不再和岗位发现混在一起。",
   },
@@ -148,7 +159,7 @@ const SURFACE_GROUP_COPY = {
 };
 
 async function api(path, options) {
-  const response = await fetch(path, options);
+  const response = await fetch(path, { cache: "no-store", ...options });
   const value = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(value.error || "请求失败");
   return value;
@@ -174,7 +185,153 @@ function TaskStatus({ task }) {
   return <span className="career-task-status is-failed">需要处理</span>;
 }
 
-export default function CareerOpsView({ selectedRole, roles, surface = "prepare", embedded = false }) {
+function MarkdownResult({ children, onOpenFile }) {
+  return (
+    <div className="career-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ children: label, href = "", ...props }) => {
+            const isExternal = /^(https?:|mailto:)/i.test(href);
+            if (isExternal || href.startsWith("#") || !onOpenFile) {
+              return <a {...props} href={href} target={isExternal ? "_blank" : undefined} rel={isExternal ? "noreferrer" : undefined}>{label}</a>;
+            }
+            return (
+              <button className="career-file-link" type="button" onClick={() => onOpenFile(href)}>
+                {label}
+              </button>
+            );
+          },
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function formatFileSize(value) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function ResumeAnalysisWorkspace({
+  snapshot,
+  tasks,
+  activeTask,
+  onSelectTask,
+  onAnalyze,
+  onImport,
+  onOpenFile,
+  onOpenSource,
+}) {
+  const resume = snapshot.resume || {};
+  const resumeTasks = tasks.filter((task) => task.mode === "resume-analyze");
+  const isRunning = resumeTasks.some((task) => task.status === "running");
+  const sourceLabel = resume.source?.name || "尚未选择 PDF 简历";
+  const sourceMeta = resume.source
+    ? `${formatTime(resume.source.importedAt)} 选择${resume.source.size ? ` · ${formatFileSize(resume.source.size)}` : ""}`
+    : "选择一份用于投递的 PDF，Career Ops 会同时阅读内容和版式";
+
+  return (
+    <div className="resume-review-workspace">
+      <main className="resume-review-main">
+        <section className="resume-review-card">
+          <header>
+            <span><FilePdf /></span>
+            <div>
+              <h2>直接分析 PDF 简历</h2>
+              <p>只读审阅当前文件，不建立母版、不自动改写事实，也不生成新的简历版本。</p>
+            </div>
+          </header>
+
+          <div className="resume-source-row">
+            <div>
+              <span className="resume-source-icon"><ClipboardText /></span>
+              <span>
+                <strong>{sourceLabel}</strong>
+                <small>{resume.sourceMissing ? "原文件已经移动，请重新选择" : sourceMeta}</small>
+              </span>
+            </div>
+            <div>
+              {resume.source && <button className="secondary-button" onClick={onOpenSource}>打开 PDF</button>}
+              <button className="primary-button" onClick={onImport}><FolderOpen /> {resume.source ? "更换 PDF" : "选择 PDF"}</button>
+            </div>
+          </div>
+
+          <div className="resume-review-checks">
+            <div>
+              <span><FilePdf /></span>
+              <strong>逐页视觉检查</strong>
+              <small>密度、分页、字体、层级与留白</small>
+            </div>
+            <div>
+              <span><ShieldCheck /></span>
+              <strong>证据可信度</strong>
+              <small>指标口径、个人贡献与因果链</small>
+            </div>
+            <div>
+              <span><Target /></span>
+              <strong>招聘方阅读</strong>
+              <small>六秒清晰度、ATS 与修改优先级</small>
+            </div>
+          </div>
+
+          <div className="resume-review-action">
+            <div>
+              <ShieldCheck />
+              <span>
+                <strong>分析过程不会修改任何 Career Ops 文件</strong>
+                <small>PDF 文字与页面图像只在本机处理，结果直接显示在这里。</small>
+              </span>
+            </div>
+            <button className="primary-button" disabled={!resume.source || isRunning} onClick={onAnalyze}>
+              {isRunning ? <SpinnerGap className="spin" /> : <ChartLineUp />}
+              {isRunning ? "正在分析" : "分析这份 PDF"}
+            </button>
+          </div>
+        </section>
+
+        {!activeTask && resume.latestAnalysis?.output && (
+          <section className="career-result resume-saved-result">
+            <header>
+              <div>
+                <span className="career-task-status is-complete"><Check /> 最近一次结果</span>
+                <h2>{resume.latestAnalysis.title || "简历分析"}</h2>
+                <p>{formatTime(resume.latestAnalysis.completedAt)} · Career Ops 逐页审阅</p>
+              </div>
+            </header>
+            <div className="career-result-body">
+              <MarkdownResult onOpenFile={onOpenFile}>{resume.latestAnalysis.output}</MarkdownResult>
+            </div>
+          </section>
+        )}
+      </main>
+
+      <aside className="career-panel career-runs resume-review-runs">
+          <header>
+            <div><h2>分析记录</h2><p>当前应用会话中的 PDF 审阅</p></div>
+            {isRunning && <SpinnerGap className="spin" />}
+          </header>
+          <div className="career-run-list">
+            {resumeTasks.length ? resumeTasks.slice(0, 8).map((task) => (
+              <button
+                key={task.id}
+                className={task.id === activeTask?.id ? "is-active" : ""}
+                onClick={() => onSelectTask(task.id)}
+              >
+                <span><strong>{task.title}</strong><small>Career Ops · {formatTime(task.createdAt)}</small></span>
+                <TaskStatus task={task} />
+              </button>
+            )) : <p className="career-panel-empty">选择 PDF 并开始分析后，运行状态会出现在这里。</p>}
+          </div>
+      </aside>
+    </div>
+  );
+}
+
+export default function CareerOpsView({ selectedRole, surface = "prepare", embedded = false }) {
   const [snapshot, setSnapshot] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [selectedAction, setSelectedAction] = useState(null);
@@ -182,7 +339,7 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [prepareSection, setPrepareSection] = useState("apply");
+  const [prepareSection, setPrepareSection] = useState("resume");
 
   const load = async () => {
     try {
@@ -190,9 +347,10 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
         api("/api/career-ops/snapshot"),
         api("/api/career-ops/tasks"),
       ]);
+      const normalizedTasks = Array.isArray(nextTasks) ? nextTasks : [];
       setSnapshot(nextSnapshot);
-      setTasks(nextTasks);
-      setActiveTaskId((current) => current || nextTasks[0]?.id || null);
+      setTasks(normalizedTasks);
+      setActiveTaskId((current) => current || normalizedTasks[0]?.id || null);
       setError("");
     } catch (nextError) {
       setError(nextError.message);
@@ -213,6 +371,14 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
   }, [tasks]);
 
   const activeTask = tasks.find((task) => task.id === activeTaskId) || tasks[0] || null;
+  const activeResumeTask = (
+    tasks.find((task) => task.mode === "resume-analyze" && task.id === activeTaskId)
+    || tasks.find((task) => task.mode === "resume-analyze")
+    || null
+  );
+  const displayTask = surface === "prepare" && prepareSection === "resume"
+    ? activeResumeTask
+    : activeTask;
   const copy = SURFACE_COPY[surface] || SURFACE_COPY.prepare;
   const visibleGroups = useMemo(() => {
     const filteredGroups = ACTION_GROUPS.map((group) => ({
@@ -237,9 +403,10 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
     setError("");
   };
 
-  const runAction = async () => {
-    if (!selectedAction) return;
-    if (selectedAction.role && !selectedRole) {
+  const runAction = async (actionOverride = null) => {
+    const action = actionOverride?.id ? actionOverride : selectedAction;
+    if (!action) return;
+    if (action.role && !selectedRole) {
       setError("请先在总览中选择一个岗位");
       return;
     }
@@ -248,8 +415,10 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode: selectedAction.id,
+          mode: action.id,
           input,
+          resumeSource: action.resume ? snapshot.resume?.source?.path || "" : "",
+          roles: [],
           role: selectedRole ? {
             company: selectedRole.name,
             team: selectedRole.team,
@@ -262,6 +431,29 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
       setSelectedAction(null);
       setActiveTaskId(task.id);
       setTasks((current) => [task, ...current]);
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message);
+    }
+  };
+
+  const importResume = async () => {
+    try {
+      const value = await api("/api/career-ops/resume/import", { method: "POST" });
+      if (value.resume) setSnapshot((current) => ({ ...current, resume: value.resume }));
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message);
+    }
+  };
+
+  const openResumeAsset = async (asset, reveal = false) => {
+    try {
+      await api("/api/career-ops/resume/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset, reveal }),
+      });
       setError("");
     } catch (nextError) {
       setError(nextError.message);
@@ -284,6 +476,19 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target }),
       });
+    } catch (nextError) {
+      setError(nextError.message);
+    }
+  };
+
+  const openCareerFile = async (href) => {
+    try {
+      await api("/api/career-ops/file/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ href }),
+      });
+      setError("");
     } catch (nextError) {
       setError(nextError.message);
     }
@@ -315,11 +520,13 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
     <section className={`career-page career-page--${surface} ${surface === "prepare" ? `career-section-${prepareSection}` : ""} ${embedded ? "is-embedded" : "page"}`}>
       <header className="career-hero">
         <div>
-          <span className="career-eyebrow"><Sparkle /> {copy.eyebrow}</span>
+          <span className="career-eyebrow">{copy.eyebrow}</span>
           <h1>{copy.title}</h1>
           <p>
             {copy.description}
-            {selectedRole && surface !== "discovery" ? ` 当前上下文：${selectedRole.name} · ${selectedRole.role}。` : ""}
+            {selectedRole && surface !== "discovery" && !(surface === "prepare" && prepareSection === "resume")
+              ? ` 当前上下文：${selectedRole.name} · ${selectedRole.role}。`
+              : ""}
           </p>
         </div>
         <div className="career-connection">
@@ -351,7 +558,18 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
         </div>
       )}
 
-      <div className="career-layout">
+      {surface === "prepare" && prepareSection === "resume" ? (
+        <ResumeAnalysisWorkspace
+          snapshot={snapshot}
+          tasks={tasks}
+          activeTask={activeResumeTask}
+          onSelectTask={setActiveTaskId}
+          onAnalyze={() => runAction(RESUME_ANALYZE_ACTION)}
+          onImport={importResume}
+          onOpenFile={openCareerFile}
+          onOpenSource={() => openResumeAsset("source")}
+        />
+      ) : <div className="career-layout">
         <div className="career-main">
           {visibleGroups.map((group) => (
             <section className="career-action-group" key={group.id}>
@@ -400,6 +618,21 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
               <button onClick={() => openLocation("outputs")}><strong>{snapshot.assetCounts?.outputs ?? snapshot.outputs.length}</strong><span>生成材料</span></button>
               <button onClick={() => openLocation("interviews")}><strong>{snapshot.assetCounts?.interviews ?? snapshot.interviewFiles.length}</strong><span>面试档案</span></button>
             </div>
+            {snapshot.reports?.length > 0 && (
+              <div className="career-report-files">
+                <span>最近评估报告</span>
+                {snapshot.reports.slice(0, 5).map((report) => (
+                  <button key={report.path} onClick={() => openCareerFile(report.path)}>
+                    <ClipboardText />
+                    <span>
+                      <strong>{report.name}</strong>
+                      <small>{formatTime(report.updatedAt)}</small>
+                    </span>
+                    <ArrowRight />
+                  </button>
+                ))}
+              </div>
+            )}
           </section>}
 
           <section className="career-panel career-runs">
@@ -414,38 +647,45 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
                   className={task.id === activeTask?.id ? "is-active" : ""}
                   onClick={() => setActiveTaskId(task.id)}
                 >
-                  <span><strong>{task.title}</strong><small>{formatTime(task.createdAt)}</small></span>
+                  <span><strong>{task.title}</strong><small>Career Ops · {formatTime(task.createdAt)}</small></span>
                   <TaskStatus task={task} />
                 </button>
               )) : <p className="career-panel-empty">运行记录会保留在当前 up 会话中。</p>}
             </div>
           </section>
         </aside>
-      </div>
+      </div>}
 
-      {activeTask && (
-        <section className={`career-result ${activeTask.status === "running" ? "is-running" : ""}`}>
+      {displayTask && (
+        <section className={`career-result ${displayTask.status === "running" ? "is-running" : ""}`}>
           <header>
             <div>
-              <TaskStatus task={activeTask} />
-              <h2>{activeTask.title}</h2>
-              <p>{formatTime(activeTask.createdAt)} · 由 Codex 调用 career-ops</p>
+              <TaskStatus task={displayTask} />
+              <h2>{displayTask.title}</h2>
+              <p>
+                {formatTime(displayTask.createdAt)}
+                {displayTask.mode === "resume-analyze" ? " · Career Ops 逐页审阅" : " · 由 Career Ops 执行，Codex 协作"}
+              </p>
             </div>
-            {activeTask.status === "running" && (
-              <button className="secondary-button" onClick={() => cancelTask(activeTask.id)}>停止任务</button>
+            {displayTask.status === "running" && (
+              <button className="secondary-button" onClick={() => cancelTask(displayTask.id)}>停止任务</button>
             )}
           </header>
           <div className="career-result-body">
-            {activeTask.output ? (
-              <pre>{activeTask.output}</pre>
-            ) : activeTask.error ? (
-              <p className="career-result-error">{activeTask.error}</p>
+            {displayTask.output ? (
+              <MarkdownResult onOpenFile={openCareerFile}>{displayTask.output}</MarkdownResult>
+            ) : displayTask.error ? (
+              <p className="career-result-error">{displayTask.error}</p>
             ) : (
               <div className="career-result-progress">
                 <span><SpinnerGap /></span>
                 <div>
                   <strong>Codex 正在工作</strong>
-                  <p>{activeTask.log?.at(-1) || "正在读取候选人档案和岗位上下文…"}</p>
+                  <p>{displayTask.log?.at(-1) || (
+                    displayTask.mode === "resume-analyze"
+                      ? "正在提取 PDF 文字并渲染页面图像…"
+                      : "正在读取候选人档案和岗位上下文…"
+                  )}</p>
                 </div>
               </div>
             )}
@@ -494,7 +734,7 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
                 <ShieldCheck />
                 <div>
                   <strong>你始终拥有最后决定权</strong>
-                  <p>up 会把任务交给 Codex 和 career-ops。消息只生成草稿，申请只做准备，未经你确认不会发送或提交。</p>
+                  <p>up 只通过本地 Career Ops 运行这些功能，并由 Codex 协作完成。消息只生成草稿，申请只做准备，未经你确认不会发送或提交。</p>
                 </div>
               </section>
             </div>
@@ -503,7 +743,7 @@ export default function CareerOpsView({ selectedRole, roles, surface = "prepare"
               <button className="secondary-button" onClick={() => setSelectedAction(null)}>取消</button>
               <button
                 className="primary-button"
-                onClick={runAction}
+                onClick={() => runAction()}
                 disabled={!snapshot.codexReady || tasks.some((task) => task.status === "running")}
               >
                 <Play weight="fill" /> 开始运行

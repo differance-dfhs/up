@@ -53,6 +53,14 @@ const EMPTY_INTELLIGENCE = {
   opportunities: [],
   roleBriefs: {},
   updates: [],
+  applicationSync: {
+    checkedAt: null,
+    status: "not_configured",
+    appliedCount: 0,
+    checkedCount: 0,
+    records: {},
+    changes: [],
+  },
   automation: {
     name: "秋招情报 Loop",
     schedule: INTELLIGENCE_SCHEDULE,
@@ -73,6 +81,9 @@ const EMPTY_CAREER_SNAPSHOT = {
 
 function normalizeIntelligence(value) {
   if (!value || typeof value !== "object") return EMPTY_INTELLIGENCE;
+  const applicationSync = value.applicationSync && typeof value.applicationSync === "object"
+    ? value.applicationSync
+    : {};
   return {
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : null,
     opportunities: Array.isArray(value.opportunities) ? value.opportunities : [],
@@ -80,6 +91,18 @@ function normalizeIntelligence(value) {
       ? value.roleBriefs
       : {},
     updates: Array.isArray(value.updates) ? value.updates : [],
+    applicationSync: {
+      checkedAt: typeof applicationSync.checkedAt === "string" ? applicationSync.checkedAt : null,
+      status: ["complete", "partial", "blocked", "not_configured"].includes(applicationSync.status)
+        ? applicationSync.status
+        : "not_configured",
+      appliedCount: Number.isFinite(applicationSync.appliedCount) ? applicationSync.appliedCount : 0,
+      checkedCount: Number.isFinite(applicationSync.checkedCount) ? applicationSync.checkedCount : 0,
+      records: applicationSync.records && typeof applicationSync.records === "object" && !Array.isArray(applicationSync.records)
+        ? applicationSync.records
+        : {},
+      changes: Array.isArray(applicationSync.changes) ? applicationSync.changes : [],
+    },
     automation: {
       name: value.automation?.name || "秋招情报 Loop",
       schedule: value.automation?.schedule || INTELLIGENCE_SCHEDULE,
@@ -208,6 +231,13 @@ function latestNode(company) {
   return [...(company.timeline || [])].sort((a, b) => a.date.localeCompare(b.date)).at(-1) || null;
 }
 
+function latestScheduledNode(company, todayKey) {
+  return [...(company.timeline || [])]
+    .filter((node) => node.date >= todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .at(-1) || null;
+}
+
 function nodeDisplayName(node) {
   if (!node) return "自定义";
   const title = String(node.title || "").trim();
@@ -237,6 +267,18 @@ function deriveStatus(company) {
   if (!node) return "待开始";
   if (node.type === "Offer") return "已完成";
   return nodeDisplayName(node);
+}
+
+function hasApplicationProgress(company) {
+  return (company.timeline || []).some((node) =>
+    ["投递", "笔试", "一面", "二面", "三面", "HR 面", "Offer"].includes(node.type)
+      || node.syncSource === "official-application-status");
+}
+
+function applicationRecordLabel(record) {
+  if (record?.accessStatus === "blocked") return "等待登录后重试";
+  if (record?.accessStatus === "unavailable") return "官网暂不提供后续状态";
+  return record?.officialStatus || record?.normalizedStage || "等待首次核对";
 }
 
 function CompanyMark({ company, compact = false }) {
@@ -473,6 +515,7 @@ function SeasonDashboard({
   companies,
   intelligence,
   careerSnapshot,
+  unreadProgressChanges,
   selectedIds,
   onToggleCompany,
   weekStart,
@@ -483,11 +526,20 @@ function SeasonDashboard({
 }) {
   const applications = careerSnapshot?.applications || [];
   const activeApplications = applications.filter((item) => !["Rejected", "Discarded", "SKIP"].includes(item.status));
-  const interviewCount = applications.filter((item) => ["Interview", "Offer", "Hired"].includes(item.status)).length;
+  const appliedCompanies = companies.filter(hasApplicationProgress);
+  const timelineInterviewCount = companies.filter((company) => (company.timeline || []).some((node) =>
+    ["一面", "二面", "三面", "HR 面", "Offer"].includes(node.type)
+      || /面试|offer/i.test(node.title || ""))).length;
+  const interviewCount = Math.max(
+    applications.filter((item) => ["Interview", "Offer", "Hired"].includes(item.status)).length,
+    timelineInterviewCount,
+  );
+  const activeApplicationCount = Math.max(activeApplications.length, appliedCompanies.length);
+  const applicationRecords = Object.values(intelligence.applicationSync?.records || {});
   const intelligenceCount = Object.keys(intelligence.roleBriefs || {}).length;
   const upcomingNodes = companies
-    .flatMap((company) => (company.timeline || []).map((node) => ({ company, node })))
-    .filter(({ node }) => node.date >= toDateKey(new Date()))
+    .map((company) => ({ company, node: latestScheduledNode(company, toDateKey(new Date())) }))
+    .filter(({ node }) => node)
     .sort((a, b) => a.node.date.localeCompare(b.node.date))
     .slice(0, 6);
   const missingJd = companies.filter((company) => !company.jd).length;
@@ -512,6 +564,17 @@ function SeasonDashboard({
         <span className="summary-count">{companies.length}<small>个在册岗位</small></span>
       </div>
 
+      {unreadProgressChanges.length > 0 && (
+        <section className="season-progress-alert" aria-label="官网投递进度更新">
+          <span><Bell weight="fill" /></span>
+          <div>
+            <strong>{unreadProgressChanges.length} 条官网进度更新</strong>
+            <p>{unreadProgressChanges[0].title}。{unreadProgressChanges[0].summary}</p>
+          </div>
+          <button onClick={() => onNavigate("roles", unreadProgressChanges[0].companyId)}>查看岗位 <ArrowRight /></button>
+        </section>
+      )}
+
       <section className="season-metrics" aria-label="秋招整体数据">
         <button onClick={() => onNavigate("roles")}>
           <strong>{companies.length}</strong>
@@ -519,9 +582,9 @@ function SeasonDashboard({
           <small>{groupCompanies(companies).length} 家公司</small>
         </button>
         <button onClick={() => onNavigate("roles")}>
-          <strong>{activeApplications.length}</strong>
+          <strong>{activeApplicationCount}</strong>
           <span>活跃申请</span>
-          <small>{applications.length} 条 Career Ops 记录</small>
+          <small>{applications.length ? `${applications.length} 条 Career Ops 记录` : `${appliedCompanies.length} 个时间轴已投递`}</small>
         </button>
         <button onClick={() => onNavigate("prepare")}>
           <strong>{interviewCount}</strong>
@@ -540,6 +603,24 @@ function SeasonDashboard({
         </button>
       </section>
 
+      {applicationRecords.length > 0 && (
+        <section className="season-sync-strip" aria-label="官网进度同步状态">
+          <header>
+            <div><Bell /><span><strong>官网进度</strong><small>{intelligence.applicationSync?.checkedAt ? `最近核对 ${formatUpdateTime(intelligence.applicationSync.checkedAt)}` : "等待首次核对"}</small></span></div>
+            <em>{intelligence.applicationSync?.checkedCount || 0}/{intelligence.applicationSync?.appliedCount || appliedCompanies.length} 已核对</em>
+          </header>
+          <div>
+            {applicationRecords.map((record) => (
+              <button key={record.companyId} onClick={() => onNavigate("roles", record.companyId)}>
+                <span>{record.company}</span>
+                <strong>{record.role}</strong>
+                <small>{applicationRecordLabel(record)}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="season-dashboard__grid">
         <section className="season-panel season-priorities">
           <header>
@@ -550,6 +631,13 @@ function SeasonDashboard({
             <Sparkle />
           </header>
           <div className="season-priority-list">
+            {unreadProgressChanges.map((change) => (
+              <button key={change.id} onClick={() => onNavigate("roles", change.companyId)}>
+                <span><Bell weight="fill" /></span>
+                <div><strong>{change.title}</strong><small>{change.summary}</small></div>
+                <ArrowRight />
+              </button>
+            ))}
             {careerSnapshot?.pipelineCount > 0 && (
               <button onClick={() => onNavigate("discovery")}>
                 <span><MagnifyingGlass /></span>
@@ -571,7 +659,7 @@ function SeasonDashboard({
                 <ArrowRight />
               </button>
             )}
-            {!careerSnapshot?.pipelineCount && !missingJd && !missingTimeline && (
+            {!unreadProgressChanges.length && !careerSnapshot?.pipelineCount && !missingJd && !missingTimeline && (
               <div className="season-priority-empty">
                 <Check weight="bold" />
                 <span><strong>基础信息已经完整</strong><small>下一步可以把精力放在重点岗位准备上。</small></span>
@@ -592,6 +680,7 @@ function SeasonDashboard({
             {upcomingNodes.length ? upcomingNodes.map(({ company, node }) => (
               <button key={`${company.id}-${node.id || node.date}`} onClick={() => onNavigate("roles", company.id)}>
                 <time>{formatMonthDay(node.date)}</time>
+                <CompanyMark company={company} compact />
                 <span><strong>{company.name} · {nodeDisplayName(node)}</strong><small>{company.team} · {company.role}</small></span>
                 <ArrowRight />
               </button>
@@ -608,7 +697,7 @@ function SeasonDashboard({
           <header>
             <div>
               <h2>申请漏斗</h2>
-              <p>Career Ops 维护的申请事实，不根据浏览或收藏猜测。</p>
+              <p>与岗位时间轴实时同步，只统计你明确记录的申请进度。</p>
             </div>
             <Briefcase />
           </header>
@@ -624,7 +713,7 @@ function SeasonDashboard({
               );
             })}
           </div>
-          {!applications.length && <p className="season-panel-empty">Career Ops 还没有正式评估或投递记录，所以这里保持为 0。</p>}
+          {!applications.length && <p className="season-panel-empty">还没有记录投递、回复或面试节点，所以这里保持为 0。</p>}
         </section>
       </div>
 
@@ -913,7 +1002,7 @@ function TimelineView({ companies, selectedIds, onToggleCompany, weekStart, onWe
                     )}
                     {days.map((day, index) => {
                       const date = toDateKey(day);
-                      const node = nodes.find((item) => item.date === date);
+                      const node = nodes.filter((item) => item.date === date).at(-1);
                       return (
                         <button
                           className={`${date === todayKey ? "is-today" : ""} ${node ? "has-node" : ""}`}
@@ -1297,8 +1386,16 @@ export function App() {
   );
   const updateItems = useMemo(() => {
     const recorded = Array.isArray(intelligence.updates) ? intelligence.updates : [];
-    if (recorded.length) {
-      return [...recorded]
+    const progressChanges = Array.isArray(intelligence.applicationSync?.changes)
+      ? intelligence.applicationSync.changes.map((change) => ({
+        ...change,
+        type: change.type || "application",
+        createdAt: change.createdAt || change.detectedAt,
+      }))
+      : [];
+    const combined = [...new Map([...recorded, ...progressChanges].map((item) => [item.id || `${item.createdAt}-${item.title}`, item])).values()];
+    if (combined.length) {
+      return combined
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
         .slice(0, 100);
     }
@@ -1310,12 +1407,13 @@ export function App() {
       title: "情报 Loop 已完成同步",
       summary: `本次保留 ${autumnOpportunities.length} 个已确认的秋招 / 校招全职机会，并更新了 ${Object.keys(intelligence.roleBriefs || {}).length} 个岗位的准备情报。`,
     }];
-  }, [autumnOpportunities.length, intelligence.generatedAt, intelligence.roleBriefs, intelligence.updates]);
+  }, [autumnOpportunities.length, intelligence.applicationSync, intelligence.generatedAt, intelligence.roleBriefs, intelligence.updates]);
   const notificationReadTime = notificationReadAt ? new Date(notificationReadAt).getTime() : 0;
   const unreadUpdates = updateItems.filter((item) => {
     const createdAt = new Date(item.createdAt || "").getTime();
     return Number.isFinite(createdAt) && createdAt > notificationReadTime;
   });
+  const unreadProgressChanges = unreadUpdates.filter((item) => item.type === "application" || item.type === "progress");
 
   useEffect(() => {
     const handler = (event) => {
@@ -1346,8 +1444,8 @@ export function App() {
       try {
         const [workspaceResponse, intelligenceResponse, careerResponse] = await Promise.all([
           fetch("/api/workspace"),
-          fetch("/api/intelligence"),
-          fetch("/api/career-ops/snapshot"),
+          fetch("/api/intelligence", { cache: "no-store" }),
+          fetch("/api/career-ops/snapshot", { cache: "no-store" }),
         ]);
         if (workspaceResponse.ok) {
           const workspace = await workspaceResponse.json();
@@ -1386,8 +1484,8 @@ export function App() {
   useEffect(() => {
     const refresh = () => {
       Promise.all([
-        fetch("/api/intelligence").then((response) => response.ok ? response.json() : Promise.reject()),
-        fetch("/api/career-ops/snapshot").then((response) => response.ok ? response.json() : Promise.reject()),
+        fetch("/api/intelligence", { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()),
+        fetch("/api/career-ops/snapshot", { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()),
       ])
         .then(([intelligenceValue, careerValue]) => {
           setIntelligence(normalizeIntelligence(intelligenceValue));
@@ -1408,7 +1506,10 @@ export function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).catch(() => {});
+      })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((snapshot) => setCareerSnapshot(snapshot))
+        .catch(() => {});
     }, 240);
     return () => window.clearTimeout(timer);
   }, [companies, hydrated]);
@@ -1496,7 +1597,7 @@ export function App() {
     };
     setCompanies((current) => current.map((company) => {
       if (company.id !== nodeDraft.companyId) return company;
-      const withoutCurrent = (company.timeline || []).filter((node) => node.id !== nextNode.id && node.date !== nextNode.date);
+      const withoutCurrent = (company.timeline || []).filter((node) => node.id !== nextNode.id);
       return { ...company, timeline: [...withoutCurrent, nextNode] };
     }));
     setModal(null);
@@ -1564,6 +1665,7 @@ export function App() {
       companies={visibleCompanies}
       intelligence={intelligence}
       careerSnapshot={careerSnapshot}
+      unreadProgressChanges={unreadProgressChanges}
       selectedIds={selectedTimelineIds}
       onToggleCompany={toggleTimelineCompany}
       weekStart={weekStart}
@@ -1680,7 +1782,9 @@ export function App() {
               {updateItems.length ? updateItems.map((item) => (
                 <article className="notification-item" key={item.id || `${item.createdAt}-${item.title}`}>
                   <span className={`notification-item__type notification-item__type--${item.type || "sync"}`}>
-                    {item.type === "opportunity"
+                    {item.type === "application" || item.type === "progress"
+                      ? "进度"
+                      : item.type === "opportunity"
                       ? "机会"
                       : item.type === "interview"
                         ? "面经"
