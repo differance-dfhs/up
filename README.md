@@ -1,6 +1,6 @@
 # up
 
-`up` is a local desktop workspace organized around companies and roles. It keeps JD, application progress, interview timelines, sourced intelligence, files, and preparation in one place.
+`up` is a company-centered desktop workspace for managing a job search role by role. It keeps JD, application status, process timelines, source-linked intelligence, files, and interview preparation together, with company and role switching, an editable Gantt timeline, and optional Codex Loop updates.
 
 The public release starts completely empty. It contains no companies, positions, JD text, notes, timeline nodes, intelligence results, personal paths, or profile data.
 
