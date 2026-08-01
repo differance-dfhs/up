@@ -11,4 +11,9 @@ output/
 public/qa/
 public/assets/profile-mountain.png
 public/logos/doubao.jpg
+
+# Local personal workspace and generated visual QA
+.learnings/
+design/
+design-qa.md
 .openai/

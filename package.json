@@ -18,14 +18,17 @@
     "desktop:dist": "npm run build && electron-builder --mac dmg --arm64 --publish never",
     "desktop:dist:x64": "npm run build && electron-builder --mac dmg --x64 --publish never"
   },
-  "dependencies": {},
+  "dependencies": {
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
   "devDependencies": {
     "@phosphor-icons/react": "2.1.10",
     "@vitejs/plugin-react": "5.0.4",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
-    "react-dom": "19.2.0",
     "react": "19.2.0",
+    "react-dom": "19.2.0",
     "vite": "6.4.3"
   },
   "build": {
