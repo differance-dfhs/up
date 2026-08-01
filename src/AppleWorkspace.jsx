@@ -111,6 +111,32 @@ const COMPANY_PRESETS = [
   ["kuaishou", ["快手", "kuaishou"], "/logos/preset-kuaishou.png"],
 ];
 
+const COMPANY_DISPLAY_NAMES = {
+  bytedance: "字节跳动",
+  alibaba: "阿里巴巴",
+  tencent: "腾讯",
+  xiaohongshu: "小红书",
+  pinduoduo: "拼多多",
+  jd: "京东",
+  baidu: "百度",
+  deepseek: "DeepSeek",
+  kimi: "Kimi",
+  minimax: "MiniMax",
+  zhipu: "智谱",
+  kuaishou: "快手",
+};
+
+function companyIdentity(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const preset = COMPANY_PRESETS.find(([, aliases]) => aliases.some((alias) => text.includes(alias.toLowerCase())));
+  return preset?.[0] || text.replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function companyDisplayName(value) {
+  const identity = companyIdentity(value);
+  return COMPANY_DISPLAY_NAMES[identity] || String(value || "公司未注明").trim();
+}
+
 function matchLogo(value) {
   const text = String(value || "").toLowerCase();
   return COMPANY_PRESETS.find(([, aliases]) => aliases.some((alias) => text.includes(alias)))?.[2] || "";
@@ -343,13 +369,14 @@ function RolesPage({ companies, intelligence, selectedId, selectedCompany, selec
   const groups = useMemo(() => {
     const map = new Map();
     companies.filter((company) => `${company.name} ${company.team} ${company.role} ${company.jd}`.toLowerCase().includes(localQuery.toLowerCase())).forEach((company) => {
-      if (!map.has(company.name)) map.set(company.name, []);
-      map.get(company.name).push(company);
+      const identity = companyIdentity(company.name);
+      if (!map.has(identity)) map.set(identity, { name: companyDisplayName(company.name), positions: [] });
+      map.get(identity).positions.push(company);
     });
-    return [...map.entries()];
+    return [...map.values()].map(({ name, positions }) => [name, positions]);
   }, [companies, localQuery]);
   const selected = selectedCompany || companies[0] || null;
-  const selectedGroup = groups.find(([name]) => name === selected?.name);
+  const selectedGroup = groups.find(([name]) => companyIdentity(name) === companyIdentity(selected?.name));
   const brief = selected ? intelligence.roleBriefs?.[selected.id] : null;
   const stage = selected ? stageFor(selected, intelligence) : "wishlist";
   const tabs = [["overview","概览"],["jd","详细 JD"],["process","具体流程"],["intelligence","情报与问题"],["notes","笔记"],["prepare","评估与准备"]];
@@ -360,11 +387,11 @@ function RolesPage({ companies, intelligence, selectedId, selectedCompany, selec
       <section className="aw-role-library">
         <div className="aw-role-library-toolbar"><SearchField value={localQuery} onChange={setLocalQuery} placeholder="搜索公司、岗位或 JD" /><span>{groups.length} 家公司 · {companies.length} 个岗位</span></div>
         <nav className="aw-company-nav" aria-label="公司选择">{groups.map(([name, positions]) => {
-          const isActive = name === selected?.name;
+          const isActive = companyIdentity(name) === companyIdentity(selected?.name);
           const activePosition = isActive && positions.some((position) => position.id === selectedId) ? selected : positions[0];
           return <button key={name} className={isActive ? "is-active" : ""} onClick={() => selectCompany(activePosition.id)} aria-pressed={isActive} aria-label={`${name}，${positions.length} 个岗位，${positions.filter((item) => item.jd).length} 份 JD`}><CompanyLogo company={positions[0]} size="md" /><span><strong>{name}</strong><small>{positions.length} 岗 · {positions.filter((item) => item.jd).length} JD</small></span></button>;
         })}</nav>
-        {selectedGroup?.[1]?.length > 1 && <div className="aw-company-role-switcher"><span>{selected?.name} 的岗位</span>{selectedGroup[1].map((company) => <button key={company.id} className={company.id === selectedId ? "is-active" : ""} onClick={() => selectCompany(company.id)}><strong>{company.role}</strong><StagePill stage={stageFor(company, intelligence)} /></button>)}</div>}
+        {selectedGroup?.[1]?.length > 1 && <div className="aw-company-role-switcher"><span>{selectedGroup[0]} 的岗位</span>{selectedGroup[1].map((company) => <button key={company.id} className={company.id === selectedId ? "is-active" : ""} onClick={() => selectCompany(company.id)}><strong>{company.role}</strong><StagePill stage={stageFor(company, intelligence)} /></button>)}</div>}
       </section>
       <main className="aw-role-detail">{selected ? <>
         <header className="aw-role-hero"><div><CompanyLogo company={selected} size="lg" /><span><small>{selected.name}</small><h2>{selected.role}</h2><p>{selected.team || "团队未注明"}{selected.location ? ` · ${selected.location}` : ""}</p></span></div><div><StagePill stage={stage} /><button className="aw-outline-button" onClick={() => openRoleEditor(selected)}><FileText />编辑资料</button></div></header>
