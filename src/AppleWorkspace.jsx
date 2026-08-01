@@ -191,6 +191,11 @@ function CompanyLogo({ company, size = "md" }) {
   );
 }
 
+function OpportunityLogo({ opportunity }) {
+  const name = opportunity.company || opportunity.organization || opportunity.title || "公司";
+  return <CompanyLogo company={{ name, team: opportunity.title || opportunity.role || "", mark: name.slice(0, 1) }} size="md" />;
+}
+
 function StagePill({ stage }) {
   const value = STAGES.find((item) => item.id === stage) || STAGES[0];
   return <span className={`aw-pill tone-${value.color}`}>{value.label}</span>;
@@ -430,7 +435,7 @@ function DiscoveryPage({ companies, intelligence, selectedCompany, openNotificat
   return <div className="aw-page aw-discovery-page">
     <PageHeader title="情报" subtitle="搜索互联网、核验来源、自动筛选新岗位，并把面试信息整理成可直接准备的问题。"><div className="aw-loop-badge"><i/><span><strong>情报 Loop</strong><small>{intelligence.automation?.status === "active" ? intelligence.automation.schedule : "未启用"}</small></span></div><IconButton label="通知" onClick={openNotifications}><BellSimple /></IconButton></PageHeader>
     <CareerOpsView selectedRole={selectedCompany} roles={companies} surface="discovery" embedded />
-    <div className="aw-discovery-summary"><Panel title="已筛选的新机会" subtitle={`${opportunities.length} 条已核验校招全职岗位`}><div className="aw-opportunity-list">{opportunities.length ? opportunities.map((item,index)=><a href={item.url} target="_blank" rel="noreferrer" key={item.id||index}><span className="aw-soft-icon"><Briefcase /></span><p><strong>{item.company || "公司未注明"} · {item.title || item.role}</strong><small>{item.summary || "已通过公开来源核验"}</small><em>{item.location || "地点未注明"} · {item.source || "来源已记录"}</em></p><ArrowRight /></a>) : <EmptyState title="还没有已核验的新机会" text="运行上方岗位扫描后，只有符合校招全职范围且来源可靠的岗位会出现在这里。" />}</div></Panel><Panel title="岗位情报覆盖" subtitle={`${Object.keys(intelligence.roleBriefs || {}).length}/${companies.length} 个岗位`}><div className="aw-brief-coverage">{companies.map((company)=><div key={company.id}><CompanyLogo company={company} size="sm"/><span><strong>{company.name}</strong><small>{company.role}</small></span>{intelligence.roleBriefs?.[company.id]?<Check/>:<Clock/>}</div>)}</div></Panel></div>
+    <div className="aw-discovery-summary"><Panel title="已筛选的新机会" subtitle={`${opportunities.length} 条已核验校招全职岗位`}><div className="aw-opportunity-list">{opportunities.length ? opportunities.map((item,index)=><a href={item.url} target="_blank" rel="noreferrer" key={item.id||index}><OpportunityLogo opportunity={item}/><p><strong>{item.company || "公司未注明"} · {item.title || item.role}</strong><small>{item.summary || "已通过公开来源核验"}</small><em>{item.location || "地点未注明"} · {item.source || "来源已记录"}</em></p><ArrowRight /></a>) : <EmptyState title="还没有已核验的新机会" text="运行上方岗位扫描后，只有符合校招全职范围且来源可靠的岗位会出现在这里。" />}</div></Panel><Panel title="岗位情报覆盖" subtitle={`${Object.keys(intelligence.roleBriefs || {}).length}/${companies.length} 个岗位`}><div className="aw-brief-coverage">{companies.map((company)=><div key={company.id}><CompanyLogo company={company} size="sm"/><span><strong>{company.name}</strong><small>{company.role}</small></span>{intelligence.roleBriefs?.[company.id]?<Check/>:<Clock/>}</div>)}</div></Panel></div>
   </div>;
 }
 
