@@ -471,7 +471,15 @@ button.aw-tr:active { background: #f1f5fa; }
 .aw-form > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .aw-form textarea { resize: vertical; }
 .aw-form footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.aw-form-actions { display: flex; gap: 10px; }
 .aw-danger-button { min-height: 38px; display: flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #f0c8ca; border-radius: 8px; background: #fff3f3; color: #c84247; cursor: pointer; }
+.aw-danger-button.is-solid { border-color: #c83d43; background: #c83d43; color: #fff; }
+.aw-delete-confirm { display: flex; align-items: flex-start; gap: 14px; padding: 24px 24px 18px; }
+.aw-delete-confirm > span { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 11px; background: #fff0f0; color: #c84247; }
+.aw-delete-confirm > span svg { width: 20px; height: 20px; }
+.aw-delete-confirm h3 { margin: 1px 0 8px; font-size: 15px; }
+.aw-delete-confirm p { margin: 0; color: var(--aw-muted); font-size: 11px; line-height: 1.7; }
+.aw-delete-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 24px 24px; }
 .aw-career-modal { position: fixed; inset: 24px; z-index: 100; overflow: auto; border: 1px solid #dbdde2; border-radius: 18px; background: #fff; box-shadow: 0 32px 100px rgba(14,18,28,.28); }
 .aw-career-modal .career-page { min-height: auto; padding: 26px !important; background: #fff; }
 .aw-toast { position: fixed; right: 26px; bottom: 24px; z-index: 120; display: flex; align-items: center; gap: 9px; padding: 12px 16px; border: 1px solid #dfe2e6; border-radius: 10px; background: #fff; box-shadow: 0 14px 45px rgba(17,20,27,.16); font-size: 11px; }
