@@ -8,6 +8,7 @@ const developmentDataDirectory = process.env.UP_DEV_DATA_DIR
   : path.resolve("data");
 const workspacePath = path.join(developmentDataDirectory, "workspace.json");
 const intelligencePath = path.join(developmentDataDirectory, "intelligence.json");
+const loopRunsPath = path.join(developmentDataDirectory, "loop-runs.json");
 const resumePath = path.join(developmentDataDirectory, "resume.json");
 const careerOpsPath = process.env.CAREER_OPS_DIR
   ? path.resolve(process.env.CAREER_OPS_DIR)
@@ -81,8 +82,15 @@ function upWorkspaceBridge() {
       return;
     }
     if (req.url === "/api/intelligence" && req.method === "GET") {
+      res.setHeader("Cache-Control", "no-store");
       res.setHeader("Content-Type", "application/json; charset=utf-8");
       res.end(JSON.stringify(readJson(intelligencePath, { generatedAt: null, opportunities: [], roleBriefs: {} })));
+      return;
+    }
+    if (req.url === "/api/loop-runs" && req.method === "GET") {
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(JSON.stringify(readJson(loopRunsPath, { version: 1, runs: [] })));
       return;
     }
     if (req.url === "/api/career-ops/snapshot" && req.method === "GET") {
@@ -140,7 +148,7 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: ["terminal.local"],
     watch: {
-      ignored: ["**/data/workspace.json", "**/data/intelligence.json", "**/data/*.tmp"],
+      ignored: ["**/data/workspace.json", "**/data/intelligence.json", "**/data/loop-runs.json", "**/data/*.tmp"],
     },
     warmup: {
       clientFiles: ["./src/main.jsx"],
