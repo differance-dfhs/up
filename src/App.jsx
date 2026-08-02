@@ -23,7 +23,6 @@ import {
 import CareerOpsView from "./CareerOps.jsx";
 
 const COMPANY_PRESETS = [
-  { id: "bytedance", name: "豆包手机", aliases: ["豆包手机", "豆包", "doubao", "字节跳动", "字节", "bytedance"], logoUrl: "/logos/preset-doubao.png", logoFit: "cover", mark: "豆" },
   { id: "alibaba", name: "阿里", aliases: ["阿里", "阿里巴巴", "alibaba", "淘天"], logoUrl: "/logos/preset-alibaba.png", mark: "阿" },
   { id: "tencent", name: "腾讯", aliases: ["腾讯", "tencent", "qq"], logoUrl: "/logos/preset-tencent.png", logoFit: "cover", mark: "腾" },
   { id: "xiaohongshu", name: "小红书", aliases: ["小红书", "xiaohongshu", "rednote"], logoUrl: "/logos/preset-xiaohongshu.png", mark: "红" },
