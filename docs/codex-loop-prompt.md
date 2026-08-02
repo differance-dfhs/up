@@ -35,7 +35,11 @@ Complete three live tasks:
    - Exclude every pure operations role, including 运营、产品运营、内容运营 and AI 解决方案运营, unless it is part of a unified 管培生/产培生/产品培训生 program. Also exclude every internship, including 日常实习、暑期实习、留用实习, and Internship, plus social-recruiting roles and roles whose campus/full-time status cannot be verified.
    - Prefer official company career pages and official announcements. Do not claim that a role is open when its status cannot be verified.
 3. Build a source-linked interview experience library for every role in the workspace.
+   - Process roles in priority order. First complete roles with an explicit application or recruiting-progress fact in the workspace timeline or Career Ops tracker. Only then continue to the remaining selected roles.
    - Search Xiaohongshu specifically for the exact company, program/team, role, recruiting cohort, interview experience, consultation, written test, group interview, first round, second round, third round, HR round, and preparation.
+   - Treat 10 independently opened and content-verified Xiaohongshu posts per role as a minimum coverage floor, not a stopping point. Continue a multi-round query matrix across exact role aliases, recruiting cohorts, each process stage, and available sort orders; open every newly surfaced, valuable exact-role post before stopping. A role is saturated only after every planned query slice has run and at least three consecutive expansion rounds produce no new valuable exact-role content (only already-seen, adjacent-track, promotional, or low-information results). Record the queries, rounds, exclusions, actual count, and saturation decision. Include both interview-process posts and assessment/written-test posts; aim for at least 4 assessment or written-test posts and 6 interview posts when exact-role evidence exists. If fewer exact matches exist, record the actual count and limitation. Never pad the target with adjacent programs or generic company posts.
+   - Match the exact selected program. Sources about adjacent trainee tracks cannot support the selected program brief unless the source explicitly separates and verifies the selected track.
+   - Match the selected direction inside a trainee program. Exclude other directions unless the source explicitly separates and supports the selected direction.
    - Search both the current cohort and earlier cohorts. Older posts are useful for recurring process and question patterns, but retain their year and never present an old process as the confirmed current process.
    - Supplement Xiaohongshu with official recruiting pages and other public interview experiences when useful.
    - Use only posts that are publicly accessible without bypassing login, paywalls, robots restrictions, or access controls. Keep the original post URL. Do not retain author names, account handles, avatars, or other personal identifiers.
@@ -69,6 +73,12 @@ Every section contains questions. Every question contains a short synthesis and 
 Write the result atomically to:
 
 `{{UP_DATA_DIR}}/intelligence.json`
+
+Also append a sanitized run summary atomically to:
+
+`{{UP_DATA_DIR}}/loop-runs.json`
+
+The run log is the source for the up “Loop 日报” page. Append a record for every run, including partial, blocked, unavailable, and no-change runs; keep newest first and retain at most 60. Record the run ID, start/end time, status, short summary, counts, newly added pipeline opportunities, verified official progress changes, homepage reminders, failures, and a per-role Xiaohongshu summary with queries, exact-role candidate count, content-verified post titles/direct URLs/digests, category (`assessment` or `interview`), actual count, target count, and limitations. Never store cookies, tokens, raw post text, author/account identifiers, avatars, candidate IDs, or personal query parameters in this file.
 
 Use this JSON structure:
 
@@ -189,6 +199,12 @@ Use this JSON structure:
             "matchedCandidateId": "matching candidate id or null"
           }
         ],
+        "saturation": {
+          "status": "expanding, saturated, or blocked",
+          "roundsCompleted": 0,
+          "consecutiveNoNewRounds": 0,
+          "decision": "short evidence-bounded explanation"
+        },
         "otherExperiencePosts": 0,
         "officialSources": 0,
         "limitations": ["missing stage, access limitation, date uncertainty, or source conflict"]

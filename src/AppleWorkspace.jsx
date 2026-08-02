@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AddressBook,
   Archive,
@@ -27,6 +27,7 @@ import {
   FunnelSimple,
   Gear,
   House,
+  ImageSquare,
   IdentificationCard,
   Kanban,
   LinkSimple,
@@ -44,6 +45,7 @@ import {
   Target,
   Trash,
   TrendUp,
+  UploadSimple,
   User,
   Users,
   X,
@@ -56,6 +58,7 @@ const NAV = [
   ["home", "首页", House],
   ["roles", "岗位", Briefcase],
   ["discovery", "情报", MagnifyingGlass],
+  ["loop", "Loop 日报", Sparkle],
   ["schedule", "时间规划", CalendarBlank],
   ["files", "文件", FolderSimple],
   ["prepare", "准备", Target],
@@ -90,10 +93,32 @@ const EMPTY_CAREER = {
   pipelineCount: 0,
 };
 
+const EMPTY_LOOP_RUNS = { version: 1, runs: [] };
+
 const EMPTY_PROFILE = { name: "", title: "", location: "" };
 
 function profileInitial(profile) {
   return String(profile?.name || "你").trim().slice(0, 1) || "你";
+}
+
+const LOGO_FILE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const LOGO_FILE_LIMIT = 2 * 1024 * 1024;
+
+function readLogoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !LOGO_FILE_TYPES.has(file.type)) {
+      reject(new Error("请选择 PNG、JPG 或 WebP 图片"));
+      return;
+    }
+    if (file.size > LOGO_FILE_LIMIT) {
+      reject(new Error("Logo 图片不能超过 2MB"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, dataUrl: String(reader.result || "") });
+    reader.onerror = () => reject(new Error("无法读取这张图片"));
+    reader.readAsDataURL(file);
+  });
 }
 
 const COMPANY_PRESETS = [
@@ -352,14 +377,70 @@ function CompaniesPage({ companies, intelligence, selectCompany, openAdd, openNo
   </div>;
 }
 
+function answerBlocks(text, synthesis) {
+  const source = String(text || "").trim();
+  if (!source) return [];
+  const markers = [...source.matchAll(/【([^】]+)】/g)];
+  if (!markers.length) return [{ title: "经验资料", body: source }];
+  const compact = (value) => String(value || "").replace(/\s+/g, "").replace(/[：:，,。.!！?？]/g, "");
+  const synthesisKey = compact(synthesis);
+  return markers.map((marker, index) => ({
+    title: marker[1].trim(),
+    body: source.slice(marker.index + marker[0].length, markers[index + 1]?.index ?? source.length).trim(),
+  })).filter(({ title, body }) => {
+    if (!body) return false;
+    if (!["资料结论", "面试官在考什么"].includes(title)) return true;
+    const bodyKey = compact(body);
+    return !synthesisKey || (!synthesisKey.includes(bodyKey) && !bodyKey.includes(synthesisKey));
+  });
+}
+
 function RoleIntelligence({ brief }) {
+  const sections = useMemo(() => {
+    if (Array.isArray(brief?.experienceSections) && brief.experienceSections.length) return brief.experienceSections;
+    const questions = Array.isArray(brief?.questions) ? brief.questions : [];
+    return questions.length ? [{ id: "questions", title: "问题清单", summary: "根据当前岗位情报整理的问题。", questions: questions.map((question, index) => typeof question === "string" ? { id: `question-${index}`, question, answers: [] } : question) }] : [];
+  }, [brief]);
+  const [sectionId, setSectionId] = useState("");
+  const [questionId, setQuestionId] = useState("");
+  useEffect(() => {
+    if (!sections.some((section) => (section.id || section.title) === sectionId)) setSectionId(sections[0]?.id || sections[0]?.title || "");
+  }, [sections, sectionId]);
+  const activeSection = sections.find((section) => (section.id || section.title) === sectionId) || sections[0];
+  const questions = activeSection?.questions || [];
+  useEffect(() => {
+    if (!questions.some((question) => (question.id || question.question) === questionId)) setQuestionId(questions[0]?.id || questions[0]?.question || "");
+  }, [questions, questionId]);
+  const activeQuestion = questions.find((question) => (question.id || question.question) === questionId) || questions[0];
   if (!brief) return <EmptyState icon={Sparkle} title="还没有岗位情报" text="情报 Loop 会读取最新 JD 和公开来源，把流程、问题与答案归到这里。" />;
-  const sections = Array.isArray(brief.experienceSections) ? brief.experienceSections : [];
+  if (!sections.length) return <EmptyState icon={Sparkle} title="还没有可练习的问题" text="下一轮情报 Loop 会按面试环节整理公开经验。" />;
+  const totalQuestions = sections.reduce((total, section) => total + (section.questions?.length || 0), 0);
+  const sourceMap = new Map((brief.sources || []).map((source) => [source.id, source]));
+  const sourceIds = [...new Set((activeQuestion?.answers || []).flatMap((answer) => answer.sourceIds || []))];
+  const relatedSources = sourceIds.map((id) => sourceMap.get(id)).filter(Boolean);
+  const blocks = (activeQuestion?.answers || []).flatMap((answer) => answerBlocks(answer.text, activeQuestion.synthesis));
   return <div className="aw-role-intelligence">
-    <section className="aw-intel-summary"><span><Sparkle /></span><div><small>今日判断</small><strong>{brief.summary}</strong><p>{brief.updatedAt ? `更新于 ${relativeTime(brief.updatedAt)}` : "更新时间未注明"} · {(brief.sources || []).length} 个来源</p></div></section>
-    <div className="aw-signal-row">{(brief.signals || []).map((signal) => <span key={signal}>{signal}</span>)}</div>
-    <div className="aw-question-sections">{sections.length ? sections.map((section) => <section key={section.id || section.title}><header><div><h3>{section.title}</h3><p>{section.summary}</p></div><b>{section.questions?.length || 0}</b></header>{(section.questions || []).map((question) => <details key={question.id || question.question}><summary><span>{question.question}</span><CaretDown /></summary><div><p className="aw-question-synthesis">{question.synthesis}</p>{(question.answers || []).map((answer, index) => <article key={index}><ReactMarkdown remarkPlugins={[remarkGfm]}>{answer.text || ""}</ReactMarkdown></article>)}</div></details>)}</section>) : (brief.questions || []).map((question) => <details key={question}><summary><span>{question}</span><CaretDown /></summary></details>)}</div>
-    {(brief.sources || []).length > 0 && <section className="aw-role-sources"><h3>来源</h3>{brief.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.id || source.url}><span><strong>{source.title || source.source || "公开来源"}</strong><small>{source.source}{source.year ? ` · ${source.year}` : ""}</small></span><ArrowRight /></a>)}</section>}
+    <section className="aw-intel-summary"><span><Sparkle /></span><div><small>岗位情报摘要</small><strong>{brief.summary}</strong><p>{brief.updatedAt ? `更新于 ${relativeTime(brief.updatedAt)}` : "更新时间未注明"} · {sections.length} 个环节 · {totalQuestions} 个问题 · {(brief.sources || []).length} 个来源</p></div></section>
+    {(brief.signals || []).length > 0 && <div className="aw-signal-row">{brief.signals.map((signal) => <span key={signal}>{signal}</span>)}</div>}
+    <div className="aw-intel-reader">
+      <aside className="aw-intel-index">
+        <header><small>INTERVIEW MAP</small><strong>按环节准备</strong><span>{totalQuestions} 个问题</span></header>
+        <nav aria-label="面试环节">{sections.map((section, index) => { const id = section.id || section.title; const active = id === (activeSection.id || activeSection.title); return <button key={id} className={active ? "is-active" : ""} onClick={() => setSectionId(id)} aria-current={active ? "step" : undefined}><i>{String(index + 1).padStart(2, "0")}</i><span><strong>{section.title}</strong><small>{section.questions?.length || 0} 个问题</small></span><CaretRight /></button>; })}</nav>
+      </aside>
+      <section className="aw-intel-workspace">
+        <header className="aw-intel-stage-header"><div><small>当前环节</small><h3>{activeSection.title}</h3><p>{activeSection.summary}</p></div><b>{questions.length}</b></header>
+        <div className="aw-intel-stage-body">
+          <nav className="aw-question-index" aria-label={`${activeSection.title}问题`}>{questions.map((question, index) => { const id = question.id || question.question; const active = id === (activeQuestion?.id || activeQuestion?.question); return <button key={id} className={active ? "is-active" : ""} onClick={() => setQuestionId(id)} aria-current={active ? "true" : undefined}><i>{String(index + 1).padStart(2, "0")}</i><span>{question.question}</span><CaretRight /></button>; })}</nav>
+          <article className="aw-question-reader">
+            <header><small>QUESTION {String(Math.max(0, questions.indexOf(activeQuestion)) + 1).padStart(2, "0")}</small><h2>{activeQuestion?.question}</h2></header>
+            {activeQuestion?.synthesis && <section className="aw-question-takeaway"><span><Sparkle /></span><div><small>核心判断</small><p>{activeQuestion.synthesis}</p></div></section>}
+            <div className="aw-answer-blocks">{blocks.length ? blocks.map((block, index) => <section key={`${block.title}-${index}`}><h3>{block.title}</h3><ReactMarkdown remarkPlugins={[remarkGfm]}>{block.body}</ReactMarkdown></section>) : <p className="aw-answer-empty">该问题暂时只有题目，下一轮情报更新会补充经验与准备建议。</p>}</div>
+            {relatedSources.length > 0 && <footer className="aw-question-sources"><small>本题来源</small><div>{relatedSources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.id || source.url}><span><strong>{source.title || source.source || "公开来源"}</strong><small>{source.source}{source.year ? ` · ${source.year}` : ""}</small></span><ArrowRight /></a>)}</div></footer>}
+          </article>
+        </div>
+      </section>
+    </div>
+    {(brief.sources || []).length > relatedSources.length && <details className="aw-role-sources"><summary>查看全部 {(brief.sources || []).length} 个公开来源 <CaretDown /></summary><div>{brief.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.id || source.url}><span><strong>{source.title || source.source || "公开来源"}</strong><small>{source.source}{source.year ? ` · ${source.year}` : ""}</small></span><ArrowRight /></a>)}</div></details>}
   </div>;
 }
 
@@ -379,6 +460,9 @@ function RolesPage({ companies, intelligence, selectedId, selectedCompany, selec
   const selectedGroup = groups.find(([name]) => companyIdentity(name) === companyIdentity(selected?.name));
   const brief = selected ? intelligence.roleBriefs?.[selected.id] : null;
   const stage = selected ? stageFor(selected, intelligence) : "wishlist";
+  const intelligenceQuestionCount = Array.isArray(brief?.experienceSections) && brief.experienceSections.length
+    ? brief.experienceSections.reduce((total, section) => total + (section.questions?.length || 0), 0)
+    : (brief?.questions?.length || 0);
   const tabs = [["overview","概览"],["jd","详细 JD"],["process","具体流程"],["intelligence","情报与问题"],["notes","笔记"],["prepare","评估与准备"]];
   useEffect(() => { setTab("overview"); }, [selected?.id]);
   return <div className="aw-page aw-roles-page">
@@ -395,7 +479,7 @@ function RolesPage({ companies, intelligence, selectedId, selectedCompany, selec
       </section>
       <main className="aw-role-detail">{selected ? <>
         <header className="aw-role-hero"><div><CompanyLogo company={selected} size="lg" /><span><small>{selected.name}</small><h2>{selected.role}</h2><p>{selected.team || "团队未注明"}{selected.location ? ` · ${selected.location}` : ""}</p></span></div><div><StagePill stage={stage} /><button className="aw-outline-button" onClick={() => openRoleEditor(selected)}><FileText />编辑资料</button></div></header>
-        <nav className="aw-role-tabs">{tabs.map(([id,label]) => <button key={id} className={tab===id?"is-active":""} onClick={()=>setTab(id)}>{label}{id==="intelligence"&&brief?.questions?.length?<b>{brief.questions.length}</b>:null}</button>)}</nav>
+        <nav className="aw-role-tabs">{tabs.map(([id,label]) => <button key={id} className={tab===id?"is-active":""} onClick={()=>setTab(id)}>{label}{id==="intelligence"&&intelligenceQuestionCount?<b>{intelligenceQuestionCount}</b>:null}</button>)}</nav>
         <div className="aw-role-tab-content">
           {tab === "overview" && <div className="aw-role-overview"><div className="aw-role-overview-grid"><Panel title="岗位资料"><div className="aw-role-facts"><span><FileText /><b>{selected.jd ? "JD 已完整" : "等待补充 JD"}</b></span><span><MapPin /><b>{selected.location || "地点未注明"}</b></span><span><CalendarBlank /><b>{(selected.timeline || []).length} 个个人节点</b></span><span><Sparkle /><b>{brief ? "公开情报已覆盖" : "等待情报更新"}</b></span></div></Panel><Panel title="公开情报"><div className="aw-role-brief-preview"><strong>{brief?.summary || "下一轮情报搜索会围绕这个岗位收集公开流程、经验与来源。"}</strong><button className="aw-text-button" onClick={()=>setTab("intelligence")}>查看问题与答案 <ArrowRight /></button></div></Panel></div><Panel title="岗位描述预览"><div className="aw-role-copy">{selected.jd ? `${selected.jd.slice(0, 700)}${selected.jd.length > 700 ? "…" : ""}` : "尚未补充 JD。点击“编辑资料”粘贴真实职位描述。"}</div></Panel></div>}
           {tab === "jd" && <div className="aw-document-view"><header><div><small>JOB DESCRIPTION</small><h2>{selected.name} · {selected.role}</h2></div><button className="aw-outline-button" onClick={() => openRoleEditor(selected)}><FileText />编辑 JD</button></header><article>{selected.jd || "尚未补充 JD。"}</article></div>}
@@ -425,6 +509,13 @@ function buildCalendar(date, companies) {
   return Array.from({ length: 42 }, (_, index) => { const day = new Date(start); day.setDate(start.getDate() + index); const key = dateKey(day); const events = companies.flatMap((company) => (company.timeline || []).filter((node) => node.date === key).map((node) => ({ company, node }))); return { day, key, events, current: day.getMonth() === date.getMonth() }; });
 }
 
+const GANTT_DAY_WIDTH = 58;
+const GANTT_ROLE_WIDTH = 210;
+const GANTT_WINDOW_DAYS = 112;
+const GANTT_PAST_DAYS = 56;
+const GANTT_SHIFT_DAYS = 42;
+const GANTT_EDGE_DAYS = 8;
+
 function CalendarPage({ companies, intelligence, openNode, openAdd, openNotifications }) {
   const [month, setMonth] = useState(new Date());
   const cells = buildCalendar(month, companies);
@@ -439,20 +530,107 @@ function CalendarPage({ companies, intelligence, openNode, openAdd, openNotifica
 
 function SchedulePage({ companies, intelligence, openNode, openNotifications, selectCompany }) {
   const [mode, setMode] = useState("timeline");
-  const [weekStart, setWeekStart] = useState(startOfWeek(new Date()));
+  const [ganttStart, setGanttStart] = useState(() => startOfWeek(addDays(new Date(), -GANTT_PAST_DAYS)));
   const [month, setMonth] = useState(new Date());
   const [visibleIds, setVisibleIds] = useState(() => companies.map((company) => company.id));
+  const [visibleRange, setVisibleRange] = useState({ start: "", end: "" });
+  const visibleRangeRef = useRef({ start: "", end: "" });
+  const ganttScrollRef = useRef(null);
+  const ganttPositionedRef = useRef(false);
+  const ganttShiftRef = useRef(null);
+  const ganttShiftLockedRef = useRef(false);
   useEffect(() => { setVisibleIds((current) => [...new Set([...current, ...companies.map((company) => company.id)])]); }, [companies]);
-  const days = Array.from({ length: 14 }, (_, index) => addDays(weekStart, index));
+  const days = useMemo(() => Array.from({ length: GANTT_WINDOW_DAYS }, (_, index) => addDays(ganttStart, index)), [ganttStart]);
   const cells = buildCalendar(month, companies);
   const counts = countStages(companies, intelligence);
   const timelineCompanies = companies.filter((company) => visibleIds.includes(company.id));
+
+  const updateVisibleRange = useCallback((element) => {
+    if (!element || !days.length) return;
+    const firstIndex = Math.max(0, Math.min(days.length - 1, Math.floor(element.scrollLeft / GANTT_DAY_WIDTH)));
+    const visibleDayCount = Math.max(1, Math.ceil((element.clientWidth - GANTT_ROLE_WIDTH) / GANTT_DAY_WIDTH));
+    const lastIndex = Math.min(days.length - 1, firstIndex + visibleDayCount - 1);
+    const next = { start: dateKey(days[firstIndex]), end: dateKey(days[lastIndex]) };
+    if (visibleRangeRef.current.start === next.start && visibleRangeRef.current.end === next.end) return;
+    visibleRangeRef.current = next;
+    setVisibleRange(next);
+  }, [days]);
+
+  const scrollToDay = useCallback((target, behavior = "auto") => {
+    const element = ganttScrollRef.current;
+    if (!element) return false;
+    const targetKey = dateKey(target);
+    const index = days.findIndex((day) => dateKey(day) === targetKey);
+    if (index < 0) return false;
+    const viewportWidth = Math.max(GANTT_DAY_WIDTH, element.clientWidth - GANTT_ROLE_WIDTH);
+    element.scrollTo({
+      left: Math.max(0, index * GANTT_DAY_WIDTH - viewportWidth / 2 + GANTT_DAY_WIDTH / 2),
+      behavior,
+    });
+    updateVisibleRange(element);
+    return true;
+  }, [days, updateVisibleRange]);
+
+  useLayoutEffect(() => {
+    if (mode !== "timeline") return;
+    const element = ganttScrollRef.current;
+    if (!element) return;
+    const pending = ganttShiftRef.current;
+    if (pending?.type === "preserve") {
+      element.scrollLeft = Math.max(0, pending.scrollLeft + pending.adjustBy);
+      ganttShiftRef.current = null;
+      ganttShiftLockedRef.current = false;
+      updateVisibleRange(element);
+      return;
+    }
+    if (!pending && ganttPositionedRef.current) {
+      updateVisibleRange(element);
+      return;
+    }
+    const target = pending?.target ? new Date(`${pending.target}T12:00:00`) : new Date();
+    scrollToDay(target);
+    ganttShiftRef.current = null;
+    ganttShiftLockedRef.current = false;
+    ganttPositionedRef.current = true;
+  }, [ganttStart, mode, scrollToDay, updateVisibleRange]);
+
+  const handleGanttScroll = (event) => {
+    const element = event.currentTarget;
+    updateVisibleRange(element);
+    if (ganttShiftLockedRef.current) return;
+    const threshold = GANTT_EDGE_DAYS * GANTT_DAY_WIDTH;
+    if (element.scrollLeft <= threshold) {
+      ganttShiftLockedRef.current = true;
+      ganttShiftRef.current = { type: "preserve", scrollLeft: element.scrollLeft, adjustBy: GANTT_SHIFT_DAYS * GANTT_DAY_WIDTH };
+      setGanttStart((current) => addDays(current, -GANTT_SHIFT_DAYS));
+      return;
+    }
+    if (element.scrollLeft + element.clientWidth >= element.scrollWidth - threshold) {
+      ganttShiftLockedRef.current = true;
+      ganttShiftRef.current = { type: "preserve", scrollLeft: element.scrollLeft, adjustBy: -GANTT_SHIFT_DAYS * GANTT_DAY_WIDTH };
+      setGanttStart((current) => addDays(current, GANTT_SHIFT_DAYS));
+    }
+  };
+
+  const scrollGanttByDays = (offset) => {
+    const element = ganttScrollRef.current;
+    if (!element) return;
+    element.scrollBy({ left: offset * GANTT_DAY_WIDTH, behavior: "smooth" });
+  };
+
+  const scrollGanttToToday = () => {
+    if (scrollToDay(new Date(), "smooth")) return;
+    ganttShiftLockedRef.current = true;
+    ganttShiftRef.current = { type: "target", target: dateKey(new Date()) };
+    setGanttStart(startOfWeek(addDays(new Date(), -GANTT_PAST_DAYS)));
+  };
+
   return <div className="aw-page aw-schedule-page">
     <PageHeader title="时间规划" subtitle="把个人时间轴、甘特图和日历放在同一个连续视图里。" action="添加时间节点" onAction={() => openNode(companies[0]?.id, dateKey(new Date()))}><IconButton label="通知" onClick={openNotifications}><BellSimple /></IconButton></PageHeader>
-    <div className="aw-schedule-toolbar"><div className="aw-segmented"><button className={mode==="timeline"?"is-active":""} onClick={()=>setMode("timeline")}><Kanban />时间轴与甘特图</button><button className={mode==="calendar"?"is-active":""} onClick={()=>setMode("calendar")}><CalendarBlank />日历</button></div>{mode === "timeline" ? <div><IconButton label="前两周" onClick={()=>setWeekStart(addDays(weekStart,-14))}><CaretLeft /></IconButton><button className="aw-outline-button" onClick={()=>setWeekStart(startOfWeek(new Date()))}>今天</button><IconButton label="后两周" onClick={()=>setWeekStart(addDays(weekStart,14))}><CaretRight /></IconButton></div> : <div><IconButton label="上个月" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><CaretLeft /></IconButton><strong>{month.getFullYear()}年 {month.getMonth()+1}月</strong><IconButton label="下个月" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><CaretRight /></IconButton></div>}</div>
+    <div className="aw-schedule-toolbar"><div className="aw-segmented"><button className={mode==="timeline"?"is-active":""} onClick={()=>setMode("timeline")}><Kanban />时间轴与甘特图</button><button className={mode==="calendar"?"is-active":""} onClick={()=>setMode("calendar")}><CalendarBlank />日历</button></div>{mode === "timeline" ? <div><IconButton label="向前滚动两周" onClick={()=>scrollGanttByDays(-14)}><CaretLeft /></IconButton><button className="aw-outline-button" onClick={scrollGanttToToday}>今天</button><IconButton label="向后滚动两周" onClick={()=>scrollGanttByDays(14)}><CaretRight /></IconButton></div> : <div><IconButton label="上个月" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><CaretLeft /></IconButton><strong>{month.getFullYear()}年 {month.getMonth()+1}月</strong><IconButton label="下个月" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><CaretRight /></IconButton></div>}</div>
     {mode === "timeline" ? <>
       <div className="aw-timeline-filters"><span>显示岗位</span>{companies.map((company) => <label key={company.id} className={visibleIds.includes(company.id)?"is-active":""}><input type="checkbox" checked={visibleIds.includes(company.id)} onChange={()=>setVisibleIds((current)=>current.includes(company.id)?current.filter((id)=>id!==company.id):[...current,company.id])}/><CompanyLogo company={company} size="sm" /><small>{company.name} · {company.role}</small><Check /></label>)}</div>
-      <Panel className="aw-gantt-panel"><div className="aw-gantt" style={{"--gantt-days":days.length}}><div className="aw-gantt-corner"><strong>岗位</strong><small>{shortDate(dateKey(days[0]))} 至 {shortDate(dateKey(days.at(-1)))}</small></div><div className="aw-gantt-dates">{days.map((day)=><div key={dateKey(day)} className={dateKey(day)===dateKey(new Date())?"is-today":""}><small>{["日","一","二","三","四","五","六"][day.getDay()]}</small><strong>{day.getDate()}</strong></div>)}</div>{timelineCompanies.map((company)=><div className="aw-gantt-row" key={company.id}><button className="aw-gantt-role" onClick={()=>selectCompany(company.id)}><CompanyLogo company={company} size="sm" /><span><strong>{company.name}</strong><small>{company.role}</small></span><StagePill stage={stageFor(company,intelligence)}/></button><div className="aw-gantt-track">{days.map((day)=>{const key=dateKey(day);const node=(company.timeline||[]).find((item)=>item.date===key);return <button key={key} className={`${key===dateKey(new Date())?"is-today":""} ${node?"has-node":""}`} onClick={()=>openNode(company.id,key,node)}>{node?<span><i/><strong>{nodeName(node)}</strong><small>{node.time}</small></span>:<Plus/>}</button>;})}</div></div>)}</div><footer className="aw-gantt-help"><span><i/>已设置节点</span><span>点击空白日期添加</span><span>点击已有节点编辑</span></footer></Panel>
+      <Panel className="aw-gantt-panel"><div className="aw-gantt-scroll" ref={ganttScrollRef} onScroll={handleGanttScroll}><div className="aw-gantt" style={{"--gantt-days":days.length}}><div className="aw-gantt-corner"><strong>岗位</strong><small>{visibleRange.start ? `${shortDate(visibleRange.start)} 至 ${shortDate(visibleRange.end)}` : "连续时间轴"}</small></div><div className="aw-gantt-dates">{days.map((day)=><div key={dateKey(day)} className={dateKey(day)===dateKey(new Date())?"is-today":""}><small>{["日","一","二","三","四","五","六"][day.getDay()]}</small><strong>{day.getDate()}</strong></div>)}</div>{timelineCompanies.map((company)=><div className="aw-gantt-row" key={company.id}><button className="aw-gantt-role" onClick={()=>selectCompany(company.id)}><CompanyLogo company={company} size="sm" /><span><strong>{company.name}</strong><small>{company.role}</small></span><StagePill stage={stageFor(company,intelligence)}/></button><div className="aw-gantt-track">{days.map((day)=>{const key=dateKey(day);const node=(company.timeline||[]).find((item)=>item.date===key);return <button key={key} className={`${key===dateKey(new Date())?"is-today":""} ${node?"has-node":""}`} onClick={()=>openNode(company.id,key,node)}>{node?<span><i/><strong>{nodeName(node)}</strong><small>{node.time}</small></span>:<Plus/>}</button>;})}</div></div>)}</div></div><footer className="aw-gantt-help"><span><i/>已设置节点</span><span>左右滑动自动加载更多日期</span><span>点击空白日期添加，点击已有节点编辑</span></footer></Panel>
     </> : <div className="aw-calendar-layout aw-calendar-merged"><Panel className="aw-calendar-main"><div className="aw-weekdays">{["周日","周一","周二","周三","周四","周五","周六"].map((day)=><span key={day}>{day}</span>)}</div><div className="aw-month-grid">{cells.map((cell)=><button key={cell.key} className={`${cell.current?"":"is-muted"} ${cell.key===dateKey(new Date())?"is-today":""}`} onClick={()=>openNode(companies[0]?.id,cell.key)}><span>{cell.day.getDate()}</span>{cell.events.slice(0,3).map(({company,node},index)=><em className={`event-${stageFor(company,intelligence)}`} key={`${company.id}-${node.id||index}`} onClick={(event)=>{event.stopPropagation();openNode(company.id,cell.key,node);}}><b>{node.time||nodeName(node)}</b><small>{company.name}</small></em>)}{cell.events.length>3&&<small>+{cell.events.length-3}</small>}</button>)}</div></Panel><aside className="aw-right-stack"><Panel title="阶段概览"><div className="aw-summary-list">{STAGES.slice(1).map((stage)=><div key={stage.id}><span><i className={`tone-${stage.color}`}/>{stage.label}</span><b>{counts[stage.id]}</b></div>)}</div></Panel><Panel title="图例"><div className="aw-legend-grid"><span><i className="tone-green"/>面试</span><span><i className="tone-orange"/>Offer</span><span><i className="tone-purple"/>测评</span><span><i className="tone-red"/>结束</span></div></Panel></aside></div>}
   </div>;
 }
@@ -463,6 +641,28 @@ function DiscoveryPage({ companies, intelligence, selectedCompany, openNotificat
     <PageHeader title="情报" subtitle="搜索互联网、核验来源、自动筛选新岗位，并把面试信息整理成可直接准备的问题。"><div className="aw-loop-badge"><i/><span><strong>情报 Loop</strong><small>{intelligence.automation?.status === "active" ? intelligence.automation.schedule : "未启用"}</small></span></div><IconButton label="通知" onClick={openNotifications}><BellSimple /></IconButton></PageHeader>
     <CareerOpsView selectedRole={selectedCompany} roles={companies} surface="discovery" embedded />
     <div className="aw-discovery-summary"><Panel title="已筛选的新机会" subtitle={`${opportunities.length} 条已核验校招全职岗位`}><div className="aw-opportunity-list">{opportunities.length ? opportunities.map((item,index)=><a href={item.url} target="_blank" rel="noreferrer" key={item.id||index}><OpportunityLogo opportunity={item}/><p><strong>{item.company || "公司未注明"} · {item.title || item.role}</strong><small>{item.summary || "已通过公开来源核验"}</small><em>{item.location || "地点未注明"} · {item.source || "来源已记录"}</em></p><ArrowRight /></a>) : <EmptyState title="还没有已核验的新机会" text="运行上方岗位扫描后，只有符合校招全职范围且来源可靠的岗位会出现在这里。" />}</div></Panel><Panel title="岗位情报覆盖" subtitle={`${Object.keys(intelligence.roleBriefs || {}).length}/${companies.length} 个岗位`}><div className="aw-brief-coverage">{companies.map((company)=><div key={company.id}><CompanyLogo company={company} size="sm"/><span><strong>{company.name}</strong><small>{company.role}</small></span>{intelligence.roleBriefs?.[company.id]?<Check/>:<Clock/>}</div>)}</div></Panel></div>
+  </div>;
+}
+
+function LoopRunsPage({ loopRuns, openNotifications }) {
+  const runs = Array.isArray(loopRuns?.runs) ? loopRuns.runs : [];
+  const [selectedId, setSelectedId] = useState(runs[0]?.id || "");
+  useEffect(() => { if (!runs.some((run) => run.id === selectedId)) setSelectedId(runs[0]?.id || ""); }, [runs, selectedId]);
+  const run = runs.find((item) => item.id === selectedId) || runs[0] || null;
+  const counts = run?.counts || {};
+  const xhsRoles = run?.xiaohongshu?.roles || [];
+  const statusLabel = { success: "已完成", partial: "部分完成", blocked: "受阻", unavailable: "不可用", running: "运行中" };
+  const stageStatusLabel = { covered: "已覆盖", partial: "旁证", gap: "待补", blocked: "受阻" };
+  return <div className="aw-page aw-loop-page">
+    <PageHeader title="Loop 日报" subtitle="查看每天搜到了什么、哪些官网状态有变化，以及每个岗位的面经核验进度。"><div className={`aw-loop-state is-${run?.status || "empty"}`}><i/><span>{run ? statusLabel[run.status] || run.status : "等待首次运行"}</span></div><IconButton label="通知" onClick={openNotifications}><BellSimple/></IconButton></PageHeader>
+    {!run ? <EmptyState icon={Sparkle} title="还没有 Loop 日报" text="每日任务完成后，无论成功、受阻还是没有变化，都会在这里留下记录。"/> : <div className="aw-loop-layout">
+      <aside className="aw-loop-history"><header><strong>运行记录</strong><span>{runs.length} 次</span></header>{runs.map((item)=><button key={item.id} className={item.id===run.id?"is-active":""} onClick={()=>setSelectedId(item.id)}><i className={`is-${item.status}`}/><span><strong>{new Date(item.completedAt || item.startedAt).toLocaleDateString("zh-CN",{month:"long",day:"numeric"})}</strong><small>{item.summary || statusLabel[item.status] || item.status}</small></span><em>{new Date(item.completedAt || item.startedAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"})}</em></button>)}</aside>
+      <main className="aw-loop-report"><section className="aw-loop-hero"><div><small>{new Date(run.completedAt || run.startedAt).toLocaleString("zh-CN")}</small><h2>{run.title || "秋招情报每日同步"}</h2><p>{run.summary}</p></div><span className={`aw-loop-status is-${run.status}`}>{statusLabel[run.status] || run.status}</span></section>
+        <div className="aw-loop-metrics">{[["已选岗位",counts.roles ?? xhsRoles.length],["正文已核验",counts.xhsPosts ?? xhsRoles.reduce((sum,item)=>sum+(item.posts?.length || item.verifiedCount || 0),0)],["新增 Pipeline",counts.pipelineAdded ?? 0],["官网变化",counts.applicationChanges ?? 0],["首页提醒",counts.homepageReminders ?? 0]].map(([label,value])=><article key={label}><strong>{value}</strong><span>{label}</span></article>)}</div>
+        <Panel title="小红书岗位资料" subtitle="持续检索至新增高价值结果饱和，逐篇打开正文后才计入"><div className="aw-loop-role-list">{xhsRoles.map((item)=><article key={item.id}><header><div><strong>{item.company} · {item.role}</strong><small>{item.priority === "active" ? "已有招聘进展，优先检索" : "已选岗位"}{item.saturation?.status === "saturated" ? " · 检索已饱和" : item.saturation?.status === "expanding" ? " · 扩展检索中" : ""}</small></div><span className={`is-${item.status}`}>{item.posts?.length || item.verifiedCount || 0} 篇已核验</span></header>{item.stageCoverage?.length ? <div className="aw-loop-stage-coverage">{item.stageCoverage.map((stage)=><span key={stage.stage} className={`is-${stage.status}`} title={stage.detail}><b>{stage.stage}</b><small>{stageStatusLabel[stage.status] || stage.status}</small></span>)}</div> : null}{item.posts?.length ? <div className="aw-loop-posts">{item.posts.map((post,index)=><a href={post.url} target="_blank" rel="noreferrer" key={post.id || post.url || index}><b>{index+1}</b><span><strong>{post.title}</strong><small>{post.digest || "正文已核验"}</small></span><ArrowRight/></a>)}</div> : <p className="aw-loop-limitation">{item.limitation || "暂未找到与该岗位严格匹配且正文可读的帖子。"}</p>}</article>)}</div></Panel>
+        <div className="aw-loop-detail-grid"><Panel title="官网投递进度">{run.officialProgress?.length ? <div className="aw-loop-notes">{run.officialProgress.map((item,index)=><article key={item.id||index}><strong>{item.company} · {item.role}</strong><p>{item.summary}</p><small>{item.status || "已核验"}</small></article>)}</div> : <EmptyState title="本次没有已核验的状态变化" text="登录失败、空白页或验证码会单独记为受阻，不会写成无更新。"/>}</Panel><Panel title="失败与限制">{run.failures?.length ? <div className="aw-loop-failures">{run.failures.map((item,index)=><p key={index}><Flag/>{typeof item === "string" ? item : item.summary}</p>)}</div> : <EmptyState icon={CheckCircle} title="没有未说明的失败" text="本次可访问范围均已记录。"/>}</Panel></div>
+      </main>
+    </div>}
   </div>;
 }
 
@@ -576,15 +776,16 @@ function NotificationDrawer({ intelligence, onClose }) {
 function Modal({ title, onClose, children, footer }) { return <><button className="aw-backdrop" onClick={onClose} aria-label="关闭"/><section className="aw-modal" role="dialog" aria-modal="true"><header><h2>{title}</h2><IconButton label="关闭" onClick={onClose}><X/></IconButton></header><div>{children}</div>{footer&&<footer>{footer}</footer>}</section></>; }
 
 export function AppleWorkspace() {
-  const [companies,setCompanies]=useState([]); const [intelligence,setIntelligence]=useState(EMPTY_INTELLIGENCE); const [career,setCareer]=useState(EMPTY_CAREER); const [profile,setProfile]=useState(EMPTY_PROFILE); const [view,setView]=useState("home"); const [query,setQuery]=useState(""); const [selectedId,setSelectedId]=useState(""); const [hydrated,setHydrated]=useState(false); const [modal,setModal]=useState(null); const [nodeDraft,setNodeDraft]=useState(null); const [notice,setNotice]=useState(""); const [notifications,setNotifications]=useState(false); const searchRef=useRef(null); const persistTimer=useRef(null);
-  useEffect(()=>{let active=true;Promise.allSettled([fetch("/api/workspace",{cache:"no-store"}),fetch("/api/intelligence",{cache:"no-store"}),fetch("/api/career-ops/snapshot",{cache:"no-store"})]).then(async(results)=>{if(!active)return;const [workspaceResult,intelligenceResult,careerResult]=results;if(workspaceResult.status==="fulfilled"&&workspaceResult.value.ok){const workspace=await workspaceResult.value.json();setCompanies(Array.isArray(workspace.companies)?workspace.companies:[]);setSelectedId(workspace.companies?.[0]?.id||"");setProfile(workspace.profile&&typeof workspace.profile==="object"?{...EMPTY_PROFILE,...workspace.profile}:EMPTY_PROFILE);}if(intelligenceResult.status==="fulfilled"&&intelligenceResult.value.ok){const intel=await intelligenceResult.value.json();setIntelligence({...EMPTY_INTELLIGENCE,...intel,applicationSync:{...EMPTY_INTELLIGENCE.applicationSync,...intel.applicationSync}});}if(careerResult.status==="fulfilled"&&careerResult.value.ok){const snapshot=await careerResult.value.json();setCareer({...EMPTY_CAREER,...snapshot});}}).catch(()=>{}).finally(()=>active&&setHydrated(true));return()=>{active=false;};},[]);
+  const [companies,setCompanies]=useState([]); const [intelligence,setIntelligence]=useState(EMPTY_INTELLIGENCE); const [loopRuns,setLoopRuns]=useState(EMPTY_LOOP_RUNS); const [career,setCareer]=useState(EMPTY_CAREER); const [profile,setProfile]=useState(EMPTY_PROFILE); const [view,setView]=useState("home"); const [query,setQuery]=useState(""); const [selectedId,setSelectedId]=useState(""); const [hydrated,setHydrated]=useState(false); const [modal,setModal]=useState(null); const [nodeDraft,setNodeDraft]=useState(null); const [logoDraft,setLogoDraft]=useState(null); const [notice,setNotice]=useState(""); const [notifications,setNotifications]=useState(false); const searchRef=useRef(null); const persistTimer=useRef(null);
+  useEffect(()=>{let active=true;Promise.allSettled([fetch("/api/workspace",{cache:"no-store"}),fetch("/api/intelligence",{cache:"no-store"}),fetch("/api/loop-runs",{cache:"no-store"}),fetch("/api/career-ops/snapshot",{cache:"no-store"})]).then(async(results)=>{if(!active)return;const [workspaceResult,intelligenceResult,loopRunsResult,careerResult]=results;if(workspaceResult.status==="fulfilled"&&workspaceResult.value.ok){const workspace=await workspaceResult.value.json();setCompanies(Array.isArray(workspace.companies)?workspace.companies:[]);setSelectedId(workspace.companies?.[0]?.id||"");setProfile(workspace.profile&&typeof workspace.profile==="object"?{...EMPTY_PROFILE,...workspace.profile}:EMPTY_PROFILE);}if(intelligenceResult.status==="fulfilled"&&intelligenceResult.value.ok){const intel=await intelligenceResult.value.json();setIntelligence({...EMPTY_INTELLIGENCE,...intel,applicationSync:{...EMPTY_INTELLIGENCE.applicationSync,...intel.applicationSync}});}if(loopRunsResult.status==="fulfilled"&&loopRunsResult.value.ok){const value=await loopRunsResult.value.json();setLoopRuns({version:1,runs:Array.isArray(value.runs)?value.runs:[]});}if(careerResult.status==="fulfilled"&&careerResult.value.ok){const snapshot=await careerResult.value.json();setCareer({...EMPTY_CAREER,...snapshot});}}).catch(()=>{}).finally(()=>active&&setHydrated(true));return()=>{active=false;};},[]);
   useEffect(()=>{const handler=(event)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();searchRef.current?.focus();}};window.addEventListener("keydown",handler);return()=>window.removeEventListener("keydown",handler);},[]);
   useEffect(()=>{if(!hydrated)return;clearTimeout(persistTimer.current);persistTimer.current=setTimeout(()=>{const payload={version:1,updatedAt:new Date().toISOString(),profile,companies};localStorage.setItem("up-workspace",JSON.stringify(payload));fetch("/api/workspace",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.ok?r.json():Promise.reject()).catch(()=>{});},280);return()=>clearTimeout(persistTimer.current);},[companies,profile,hydrated]);
   const filtered=useMemo(()=>{const text=query.trim().toLowerCase();return text?companies.filter(c=>`${c.name}${c.team}${c.role}${c.location}${c.jd}`.toLowerCase().includes(text)):companies;},[companies,query]); const selected=companies.find(c=>c.id===selectedId)||companies[0]||null;
-  const flash=(message)=>{setNotice(message);setTimeout(()=>setNotice(""),2800);}; const openAdd=()=>setModal("add"); const selectCompany=(id)=>setSelectedId(id); const openRoleEditor=(company)=>{setSelectedId(company.id);setModal("role");};
+  const flash=(message)=>{setNotice(message);setTimeout(()=>setNotice(""),2800);}; const openAdd=()=>{setLogoDraft(null);setModal("add");}; const closeAdd=()=>{setLogoDraft(null);setModal(null);}; const selectCompany=(id)=>setSelectedId(id); const openRoleEditor=(company)=>{setSelectedId(company.id);setModal("role");};
+  const selectLogo=async(event)=>{const file=event.target.files?.[0];if(!file)return;try{setLogoDraft(await readLogoFile(file));}catch(error){event.target.value="";setLogoDraft(null);flash(error.message||"无法读取 Logo");}};
   const openNode=(companyId,date,node=null)=>{if(!companyId){flash("请先添加一个岗位");return;}setNodeDraft({companyId,date,id:node?.id||"",type:node?.type||"自定义",title:node?.title||"",time:node?.time||"",note:node?.note||""});setModal("node");};
   const saveProfile=(event)=>{event.preventDefault();const data=new FormData(event.currentTarget);setProfile({name:String(data.get("name")||"").trim(),title:String(data.get("title")||"").trim(),location:String(data.get("location")||"").trim()});setModal(null);flash("个人资料已保存");};
-  const saveCompany=(event)=>{event.preventDefault();const data=new FormData(event.currentTarget);const name=String(data.get("name")||"").trim();const role=String(data.get("role")||"").trim();if(!name||!role)return;const logo=matchLogo(name);const company={id:`position-${Date.now()}`,name,team:String(data.get("team")||name).trim(),role,location:String(data.get("location")||"").trim(),status:"待开始",mark:name.slice(0,1),logoUrl:logo,jd:String(data.get("jd")||"").trim(),notes:"",timeline:[],files:[]};setCompanies(current=>[...current,company]);setSelectedId(company.id);setModal(null);flash("岗位已添加");};
+  const saveCompany=(event)=>{event.preventDefault();const data=new FormData(event.currentTarget);const name=String(data.get("name")||"").trim();const role=String(data.get("role")||"").trim();if(!name||!role)return;const logo=logoDraft?.dataUrl||matchLogo(name);const company={id:`position-${Date.now()}`,name,team:String(data.get("team")||name).trim(),role,location:String(data.get("location")||"").trim(),status:"待开始",mark:name.slice(0,1),logoUrl:logo,jd:String(data.get("jd")||"").trim(),notes:"",timeline:[],files:[]};setCompanies(current=>[...current,company]);setSelectedId(company.id);setLogoDraft(null);setModal(null);flash("岗位已添加");};
   const saveRole=(event)=>{event.preventDefault();const data=new FormData(event.currentTarget);setCompanies(current=>current.map(company=>company.id===selectedId?{...company,name:String(data.get("name")||company.name).trim(),role:String(data.get("role")||company.role).trim(),team:String(data.get("team")||"").trim(),location:String(data.get("location")||"").trim(),jd:String(data.get("jd")||"").trim(),notes:String(data.get("notes")||"").trim()}:company));setModal(null);flash("岗位资料已保存");};
   const deleteRole=()=>{if(!selected)return;const removedIdentity=companyIdentity(selected.name);const remaining=companies.filter(company=>company.id!==selected.id);const next=remaining.find(company=>companyIdentity(company.name)===removedIdentity)||remaining[0]||null;setCompanies(remaining);setSelectedId(next?.id||"");setModal(null);flash("岗位已删除");};
   const saveNode=(event)=>{event.preventDefault();const data=new FormData(event.currentTarget);const node={id:nodeDraft.id||`node-${Date.now()}`,date:nodeDraft.date,type:String(data.get("type")||"自定义"),title:String(data.get("title")||"").trim(),time:String(data.get("time")||"").trim(),note:String(data.get("note")||"").trim()};setCompanies(current=>current.map(company=>company.id===nodeDraft.companyId?{...company,timeline:[...(company.timeline||[]).filter(item=>item.id!==node.id),node]}:company));setModal(null);flash("日程节点已保存");};
@@ -592,14 +793,14 @@ export function AppleWorkspace() {
   const openCareerFile=async(path)=>{try{const response=await fetch("/api/career-ops/file/open",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({href:path})});if(!response.ok){const value=await response.json();throw new Error(value.error);}flash("已打开本地文件");}catch(error){flash(error.message||"无法打开文件");}};
   const importRoleFiles=async(companyId)=>{if(!companyId){flash("请先选择岗位");return;}try{const response=await fetch("/api/files/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({roleId:companyId})});const value=await response.json();if(!response.ok)throw new Error(value.error);if(value.cancelled)return;const files=Array.isArray(value.files)?value.files:[];setCompanies(current=>current.map(company=>company.id===companyId?{...company,files:[...(company.files||[]),...files]}:company));flash(`已归档 ${files.length} 个文件`);}catch(error){flash(error.message||"无法添加文件");}};
   const openStoredFile=async(path,reveal=false)=>{try{const response=await fetch("/api/files/open",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path,reveal})});const value=await response.json();if(!response.ok)throw new Error(value.error);flash(reveal?"已在 Finder 中显示":"已打开文件");}catch(error){flash(error.message||"无法打开文件");}};
-  const pageProps={companies:filtered,intelligence,career,profile,selectedId,selectedCompany:selected,selectCompany,openAdd,openRoleEditor,openNotifications:()=>setNotifications(true),navigate:(next,id)=>{if(id)setSelectedId(id);setView(next);},openNode,openCareerFile,importRoleFiles,openStoredFile,openCareer:()=>setView("prepare")};
+  const pageProps={companies:filtered,intelligence,loopRuns,career,profile,selectedId,selectedCompany:selected,selectCompany,openAdd,openRoleEditor,openNotifications:()=>setNotifications(true),navigate:(next,id)=>{if(id)setSelectedId(id);setView(next);},openNode,openCareerFile,importRoleFiles,openStoredFile,openCareer:()=>setView("prepare")};
   return <div className="aw-app">
     <aside className="aw-sidebar">
       <button className="aw-brand" onClick={()=>setView("home")}><img src="/brand-up.png" alt="UP"/></button>
       <SearchField value={query} onChange={setQuery} placeholder="搜索公司、岗位或 JD" inputRef={searchRef}/>
       <nav>{NAV.map(([id,label,Icon])=><button key={id} className={view===id?"is-active":""} onClick={()=>setView(id)}><Icon/><span>{label}</span></button>)}</nav>
       <div className="aw-sidebar-bottom">
-        <button className={view==="discovery"?"is-active":""} onClick={()=>setView("discovery")}><Sparkle/><span>情报 Loop</span><small>{intelligence.automation?.status === "active" ? "运行中" : "未启用"}</small></button>
+        <button className={view==="loop"?"is-active":""} onClick={()=>setView("loop")}><Sparkle/><span>情报 Loop</span><small>{loopRuns.runs?.[0] ? "查看日报" : intelligence.automation?.status === "active" ? "运行中" : "未启用"}</small></button>
         <button className="aw-profile" onClick={()=>setModal("profile")} aria-label="编辑个人资料"><span>{profileInitial(profile)}</span><p><strong>{profile.name||"设置个人资料"}</strong><small>{profile.title||"填写你的职位方向"}</small></p><CaretRight/></button>
       </div>
     </aside>
@@ -607,13 +808,14 @@ export function AppleWorkspace() {
       {view==="home"&&<HomePage {...pageProps}/>}
       {view==="roles"&&<RolesPage {...pageProps}/>}
       {view==="discovery"&&<DiscoveryPage {...pageProps}/>}
+      {view==="loop"&&<LoopRunsPage {...pageProps}/>}
       {view==="schedule"&&<SchedulePage {...pageProps}/>}
       {view==="files"&&<FilesPage {...pageProps}/>}
       {view==="prepare"&&<PreparePage {...pageProps}/>}
     </main>
     {notice&&<div className="aw-toast"><Check/>{notice}</div>}
     {notifications&&<NotificationDrawer intelligence={intelligence} onClose={()=>setNotifications(false)}/>}
-    {modal==="add"&&<Modal title="添加岗位" onClose={()=>setModal(null)}><form className="aw-form" onSubmit={saveCompany}><label>公司名称<input name="name" autoFocus required placeholder="例如：腾讯"/></label><label>岗位名称<input name="role" required placeholder="例如：AI 产品经理"/></label><div><label>团队<input name="team" placeholder="可选"/></label><label>地点<input name="location" placeholder="可选"/></label></div><label>岗位描述<textarea name="jd" rows="7" placeholder="粘贴真实 JD，可稍后补充"/></label><footer><button type="button" className="aw-outline-button" onClick={()=>setModal(null)}>取消</button><button className="aw-black-button" type="submit"><Plus/>添加岗位</button></footer></form></Modal>}
+    {modal==="add"&&<Modal title="添加岗位" onClose={closeAdd}><form className="aw-form" onSubmit={saveCompany}><label>公司名称<input name="name" autoFocus required placeholder="例如：腾讯"/></label><label className="aw-logo-upload"><input type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={selectLogo}/><span className="aw-logo-upload__preview">{logoDraft?.dataUrl?<img src={logoDraft.dataUrl} alt="待上传的公司 Logo"/>:<ImageSquare/>}</span><span className="aw-logo-upload__copy"><strong>公司 Logo</strong><small>{logoDraft?.name||"可选，支持 PNG、JPG、WebP，最大 2MB"}</small></span><span className="aw-logo-upload__button"><UploadSimple/>{logoDraft?"更换图片":"上传 Logo"}</span></label><label>岗位名称<input name="role" required placeholder="例如：AI 产品经理"/></label><div><label>团队<input name="team" placeholder="可选"/></label><label>地点<input name="location" placeholder="可选"/></label></div><label>岗位描述<textarea name="jd" rows="7" placeholder="粘贴真实 JD，可稍后补充"/></label><footer><button type="button" className="aw-outline-button" onClick={closeAdd}>取消</button><button className="aw-black-button" type="submit"><Plus/>添加岗位</button></footer></form></Modal>}
     {modal==="profile"&&<Modal title="个人资料" onClose={()=>setModal(null)}><form className="aw-form" onSubmit={saveProfile}><label>姓名<input name="name" autoFocus defaultValue={profile.name} placeholder="例如：张三"/></label><label>目标方向<input name="title" defaultValue={profile.title} placeholder="例如：AI 产品经理"/></label><label>工作地点<input name="location" defaultValue={profile.location} placeholder="可选"/></label><footer><button type="button" className="aw-outline-button" onClick={()=>setModal(null)}>取消</button><button className="aw-black-button" type="submit"><Check/>保存个人资料</button></footer></form></Modal>}
     {modal==="role"&&selected&&<Modal title={`${selected.name} · ${selected.role}`} onClose={()=>setModal(null)}><form className="aw-form" onSubmit={saveRole}><div><label>公司名称<input name="name" defaultValue={selected.name} required/></label><label>岗位名称<input name="role" defaultValue={selected.role} required/></label></div><div><label>团队<input name="team" defaultValue={selected.team}/></label><label>地点<input name="location" defaultValue={selected.location}/></label></div><label>详细 JD<textarea name="jd" rows="11" defaultValue={selected.jd} placeholder="粘贴真实职位描述"/></label><label>岗位笔记<textarea name="notes" rows="5" defaultValue={selected.notes} placeholder="记录个人判断、准备重点或联系人"/></label><footer><button type="button" className="aw-danger-button" onClick={()=>setModal("delete-role")}><Trash/>删除岗位</button><div className="aw-form-actions"><button type="button" className="aw-outline-button" onClick={()=>setModal(null)}>取消</button><button className="aw-black-button" type="submit"><Check/>保存资料</button></div></footer></form></Modal>}
     {modal==="delete-role"&&selected&&<Modal title="删除岗位" onClose={()=>setModal(null)}><div className="aw-delete-confirm"><span><Trash/></span><div><h3>确认删除“{selected.role}”？</h3><p>{companyDisplayName(selected.name)} 下的其他岗位会继续保留。当前岗位的 JD、笔记和时间轴会从工作台移除，本地归档文件不会从磁盘删除。</p></div></div><div className="aw-delete-actions"><button type="button" className="aw-outline-button" onClick={()=>setModal("role")}>返回</button><button type="button" className="aw-danger-button is-solid" onClick={deleteRole}><Trash/>确认删除岗位</button></div></Modal>}

@@ -185,12 +185,15 @@ const emptyIntelligence = {
   },
 };
 
+const emptyLoopRuns = { version: 1, runs: [] };
+
 function dataPaths() {
   const directory = path.join(app.getPath("userData"), "data");
   return {
     directory,
     workspace: path.join(directory, "workspace.json"),
     intelligence: path.join(directory, "intelligence.json"),
+    loopRuns: path.join(directory, "loop-runs.json"),
     resume: path.join(directory, "resume.json"),
     files: path.join(directory, "files"),
   };
@@ -896,6 +899,7 @@ function ensureCleanDataFiles() {
   fs.mkdirSync(paths.directory, { recursive: true });
   if (!fs.existsSync(paths.workspace)) writeJson(paths.workspace, emptyWorkspace);
   if (!fs.existsSync(paths.intelligence)) writeJson(paths.intelligence, emptyIntelligence);
+  if (!fs.existsSync(paths.loopRuns)) writeJson(paths.loopRuns, emptyLoopRuns);
 }
 
 function jsonResponse(value, status = 200) {
@@ -948,6 +952,11 @@ async function handleAppRequest(request) {
 
   if (pathname === "/api/intelligence" && request.method === "GET") {
     return jsonResponse(normalizeIntelligence(readJson(paths.intelligence, emptyIntelligence)));
+  }
+
+  if (pathname === "/api/loop-runs" && request.method === "GET") {
+    const value = readJson(paths.loopRuns, emptyLoopRuns);
+    return jsonResponse({ version: 1, runs: Array.isArray(value?.runs) ? value.runs : [] });
   }
 
   if (pathname === "/api/career-ops/snapshot" && request.method === "GET") {
