@@ -2,9 +2,21 @@
 
 `up` is a company-centered desktop workspace for managing a job search role by role. It keeps JD, application status, process timelines, source-linked intelligence, files, and interview preparation together, with company and role switching, an editable Gantt timeline, and optional Codex Loop updates.
 
-![UP company-centered role workspace](docs/assets/up-workspace-public.png)
+![UP private job-search dashboard](docs/assets/up-home.png)
 
 The public release starts completely empty. It contains no companies, positions, JD text, notes, timeline nodes, intelligence results, personal paths, or profile data.
+
+## Product tour
+
+All screenshots below use anonymous demonstration data. They contain no real candidate profile, position, JD, application state, file path, or locally stored content.
+
+| Company and role workspace | Source-linked intelligence |
+| --- | --- |
+| ![Company and role workspace](docs/assets/up-roles.png) | ![Role intelligence organized by interview stage and question](docs/assets/up-role-intelligence.png) |
+| **Verified opportunity discovery** | **Editable timeline and Gantt view** |
+| ![Verified opportunity discovery](docs/assets/up-opportunities.png) | ![Editable application timeline](docs/assets/up-timeline.png) |
+| **PDF resume analysis** | **Private dashboard** |
+| ![PDF resume analysis](docs/assets/up-resume-analysis.png) | ![Private job-search dashboard](docs/assets/up-home.png) |
 
 ## Acknowledgements / 致谢
 
