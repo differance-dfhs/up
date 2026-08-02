@@ -122,7 +122,6 @@ function readLogoFile(file) {
 }
 
 const COMPANY_PRESETS = [
-  ["bytedance", ["字节", "豆包", "bytedance"], "/logos/preset-doubao.png"],
   ["alibaba", ["阿里", "千问", "alibaba"], "/logos/preset-alibaba.png"],
   ["tencent", ["腾讯", "tencent"], "/logos/preset-tencent.png"],
   ["xiaohongshu", ["小红书", "rednote"], "/logos/preset-xiaohongshu.png"],
@@ -137,7 +136,6 @@ const COMPANY_PRESETS = [
 ];
 
 const COMPANY_DISPLAY_NAMES = {
-  bytedance: "字节跳动",
   alibaba: "阿里巴巴",
   tencent: "腾讯",
   xiaohongshu: "小红书",
@@ -682,7 +680,7 @@ function storedFileSize(value) {
 }
 
 const CAREER_FILE_ALIASES = {
-  "字节跳动": ["bytedance", "doubao", "豆包"], "京东": ["jingdong", "jd"], "百度": ["baidu"], "小红书": ["xiaohongshu", "rednote"],
+  "京东": ["jingdong", "jd"], "百度": ["baidu"], "小红书": ["xiaohongshu", "rednote"],
   "腾讯": ["tencent"], "DeepSeek": ["deepseek"], "Kimi": ["kimi", "moonshot"], "智谱": ["zhipu", "glm"], "MiniMax": ["minimax"], "阿里": ["alibaba", "qwen", "千问"],
 };
 
